@@ -55,4 +55,6 @@ The firmware uses [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) for X3 
 
 Updates and discussion: [t.me/pagepet_reader](https://t.me/pagepet_reader).
 
+For project rules and contribution guidance, see the [Code of Conduct](CODE_OF_CONDUCT.md), [Contributing guide](CONTRIBUTING.md), and [Security policy](SECURITY.md). Bug reports and focused feature requests use the [issue templates](.github/ISSUE_TEMPLATE/); pull requests use the [pull request template](.github/PULL_REQUEST_TEMPLATE.md).
+
 The firmware source is available under the [MIT license](LICENSE). Dependencies and the font retain their own licenses.

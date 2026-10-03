@@ -55,4 +55,6 @@ pio run -e x3
 
 Новости и обсуждение: [t.me/pagepet_reader](https://t.me/pagepet_reader).
 
+Правила проекта описаны в [Code of Conduct](CODE_OF_CONDUCT.md), [Contributing guide](CONTRIBUTING.md) и [политике безопасности](SECURITY.md). Для сообщений об ошибках и предложений есть [шаблоны issue](.github/ISSUE_TEMPLATE/), а для pull request — [шаблон PR](.github/PULL_REQUEST_TEMPLATE.md).
+
 Исходный код прошивки распространяется по [лицензии MIT](LICENSE). У зависимостей и шрифта свои лицензии.
