@@ -22,8 +22,10 @@ namespace ui = freeink::ui;
 
 constexpr char STATE_PATH[] = "/.pagepet/state.dat";
 constexpr char PET_PATH[] = "/.pagepet/pet.dat";
+constexpr char SETTINGS_PATH[] = "/.pagepet/settings.dat";
 constexpr uint32_t STATE_MAGIC = 0x50505431;
 constexpr uint32_t STATE_VERSION = 1;
+constexpr uint32_t SETTINGS_MAGIC = 0x50504c31;
 constexpr size_t MAX_BOOKS = 14;
 constexpr size_t VISIBLE_ITEMS = 8;
 constexpr size_t NAME_BYTES = 96;
@@ -33,6 +35,13 @@ struct SavedState {
   uint32_t version;
   uint32_t characterOffset;
   char path[128];
+  uint32_t checksum;
+};
+
+struct SavedSettings {
+  uint32_t magic;
+  uint32_t version;
+  uint32_t language;
   uint32_t checksum;
 };
 
@@ -57,9 +66,12 @@ char bookNames[MAX_BOOKS][NAME_BYTES]{};
 size_t bookCount = 0;
 size_t selection = 0;
 SavedState saved{};
+strings::Language language = strings::Language::English;
 uint32_t lastStateWriteMs = 0;
 bool wakePowerReleasePending = true;
 char errorText[64]{};
+
+const char* uiText(strings::Text key) { return strings::tr(key, language); }
 
 ui::DisplayTarget canvas() {
   ui::DisplayTarget target(display.getFrameBuffer(), display.getDisplayWidth(), display.getDisplayHeight(),
@@ -81,9 +93,9 @@ void showError(const char* message) {
   if (!display.getFrameBuffer()) return;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 48, 740, strings::title);
+  label(target, 24, 48, 740, uiText(strings::Text::Title));
   label(target, 24, 150, 740, errorText);
-  label(target, 24, 482, 740, strings::petHint);
+  label(target, 24, 482, 740, uiText(strings::Text::BackHint));
   display.displayBuffer(freeink::FreeInkDisplay::HALF_REFRESH);
 }
 
@@ -106,7 +118,7 @@ void scanBooks() {
     if (!entry.getName(name, sizeof(name)) || !hasTxtExtension(name)) continue;
     memcpy(bookNames[bookCount++], name, sizeof(name));
   }
-  if (selection > bookCount) selection = 0;
+  if (selection > bookCount + 1) selection = 0;
 }
 
 void drawHome() {
@@ -114,14 +126,14 @@ void drawHome() {
   if (!display.getFrameBuffer()) return;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 24, 740, strings::title);
+  label(target, 24, 24, 740, uiText(strings::Text::Title));
   target.line({24, 60}, {768, 60}, 1, ui::Paint::solid(ui::Color::Black));
   if (!cardReady) {
-    label(target, 24, 118, 740, strings::noCard);
-    label(target, 24, 482, 740, strings::retryHint);
+    label(target, 24, 118, 740, uiText(strings::Text::NoCard));
+    label(target, 24, 482, 740, uiText(strings::Text::RetryHint));
   } else {
-    label(target, 24, 82, 740, strings::books);
-    if (bookCount == 0) label(target, 24, 220, 740, strings::noBooks);
+    label(target, 24, 82, 740, uiText(strings::Text::Books));
+    if (bookCount == 0) label(target, 24, 220, 740, uiText(strings::Text::NoBooks));
     const size_t first = (selection / VISIBLE_ITEMS) * VISIBLE_ITEMS;
     for (size_t i = first; i < bookCount && i < first + VISIBLE_ITEMS; ++i) {
       const int y = 128 + static_cast<int>(i - first) * 40;
@@ -133,9 +145,15 @@ void drawHome() {
       const int petY = 128 + static_cast<int>(bookCount - first) * 40;
       if (selection == bookCount) target.fill({18, static_cast<int16_t>(petY - 2), 750, 34},
                                                ui::Paint::solid(ui::Color::LightGray));
-      label(target, 28, petY, 720, strings::companion);
+      label(target, 28, petY, 720, uiText(strings::Text::Companion));
     }
-    label(target, 12, 482, 760, strings::homeHint);
+    if (bookCount + 1 >= first && bookCount + 1 < first + VISIBLE_ITEMS) {
+      const int languageY = 128 + static_cast<int>(bookCount + 1 - first) * 40;
+      if (selection == bookCount + 1) target.fill({18, static_cast<int16_t>(languageY - 2), 750, 34},
+                                                   ui::Paint::solid(ui::Color::LightGray));
+      label(target, 28, languageY, 720, uiText(strings::Text::Language));
+    }
+    label(target, 12, 482, 760, uiText(strings::Text::HomeHint));
   }
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }
@@ -154,6 +172,33 @@ bool readState(const char* path) {
 void loadState() {
   if (!readState(STATE_PATH)) {
     if (!readState("/.pagepet/state.dat.bak")) saved = {};
+  }
+}
+
+bool readLanguage(const char* path) {
+  FsFile file = card.open(path, O_RDONLY);
+  SavedSettings candidate{};
+  if (!file || file.size() != sizeof(candidate) ||
+      file.read(&candidate, sizeof(candidate)) != sizeof(candidate) ||
+      candidate.magic != SETTINGS_MAGIC || candidate.version != 1 || candidate.language > 1 ||
+      candidate.checksum != checksum(&candidate, offsetof(SavedSettings, checksum))) return false;
+  language = static_cast<strings::Language>(candidate.language);
+  return true;
+}
+
+void loadLanguage() {
+  if (!readLanguage(SETTINGS_PATH)) readLanguage("/.pagepet/settings.dat.bak");
+}
+
+void saveLanguage() {
+  if (!cardReady) return;
+  SavedSettings value{};
+  value.magic = SETTINGS_MAGIC;
+  value.version = 1;
+  value.language = static_cast<uint32_t>(language);
+  value.checksum = checksum(&value, offsetof(SavedSettings, checksum));
+  if (!writeAtomic(card, SETTINGS_PATH, &value, sizeof(value))) {
+    Serial.printf("[settings] language save failed\n");
   }
 }
 
@@ -204,6 +249,7 @@ bool mountCard() {
     cardReady = false;
     return false;
   }
+  loadLanguage();
   loadState();
   loadPet();
   scanBooks();
@@ -213,19 +259,19 @@ bool mountCard() {
 void openBook(const char* path) {
   char absolute[128];
   if (snprintf(absolute, sizeof(absolute), "/%s", path) >= static_cast<int>(sizeof(absolute))) {
-    showError(strings::openError);
+    showError(uiText(strings::Text::OpenError));
     return;
   }
   const uint32_t offset = strcmp(saved.path, absolute) == 0 ? saved.characterOffset : 0;
   if (!reader.open(card, display, absolute, offset, display.getDisplayHeight(), display.getDisplayWidth())) {
-    showError(strings::openError);
+    showError(uiText(strings::Text::OpenError));
     return;
   }
   pet.beginSession(millis());
   screen = Screen::Reading;
   if (!reader.render(display)) {
     reader.close();
-    showError(strings::pageError);
+    showError(uiText(strings::Text::PageError));
     return;
   }
   petRenderedPage();
@@ -244,7 +290,7 @@ void drawCompanion() {
   screen = Screen::Companion;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 24, 740, strings::companion);
+  label(target, 24, 24, 740, uiText(strings::Text::Companion));
   uint8_t sprite[companion::kSpriteBytes]{};
   if (companion::renderCharacter(pet.state().character_class, sprite, sizeof(sprite))) {
     for (int y = 0; y < 16; ++y) {
@@ -257,9 +303,10 @@ void drawCompanion() {
     }
   }
   char progress[64];
-  snprintf(progress, sizeof(progress), "%lu pages read", static_cast<unsigned long>(pet.state().valid_pages));
+  snprintf(progress, sizeof(progress), uiText(strings::Text::PagesRead),
+           static_cast<unsigned long>(pet.state().valid_pages));
   label(target, 24, 306, 740, progress, ui::TextAlign::Center);
-  label(target, 24, 482, 740, strings::petHint);
+  label(target, 24, 482, 740, uiText(strings::Text::BackHint));
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }
 
@@ -302,13 +349,18 @@ void loop() {
     if (!cardReady) {
       if (input.wasReleased(InputManager::BTN_CONFIRM) && mountCard()) drawHome();
     } else if (input.wasReleased(InputManager::BTN_UP)) {
-      selection = selection == 0 ? bookCount : selection - 1;
+      selection = selection == 0 ? bookCount + 1 : selection - 1;
       drawHome();
     } else if (input.wasReleased(InputManager::BTN_DOWN)) {
-      selection = selection >= bookCount ? 0 : selection + 1;
+      selection = selection >= bookCount + 1 ? 0 : selection + 1;
       drawHome();
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
-      if (selection == bookCount) drawCompanion();
+      if (selection == bookCount + 1) {
+        language = language == strings::Language::English ? strings::Language::Russian
+                                                            : strings::Language::English;
+        saveLanguage();
+        drawHome();
+      } else if (selection == bookCount) drawCompanion();
       else openBook(bookNames[selection]);
     } else if (input.wasReleased(InputManager::BTN_BACK) && saved.path[0]) {
       openBook(saved.path[0] == '/' ? saved.path + 1 : saved.path);
@@ -317,12 +369,12 @@ void loop() {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       closeBook();
     } else if (input.wasReleased(InputManager::BTN_UP)) {
-      if (reader.previous() && !reader.render(display)) showError(strings::pageError);
+      if (reader.previous() && !reader.render(display)) showError(uiText(strings::Text::PageError));
       saveState();
     } else if (input.wasReleased(InputManager::BTN_DOWN)) {
       if (reader.next()) {
         if (reader.render(display)) petRenderedPage();
-        else showError(strings::pageError);
+        else showError(uiText(strings::Text::PageError));
         saveState();
       }
     }

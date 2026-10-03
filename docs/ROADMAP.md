@@ -1,37 +1,37 @@
-# План развития PagePet Reader
+# PagePet Reader development priorities
 
-Главная задача прошивки для Xteink X3: после включения быстро вернуться к книге и читать с комфортом, пользуясь только кнопками. PagePet остаётся необязательным приятным дополнением: он развивается по мере чтения и не требует действий от читателя.
+The firmware's core job on Xteink X3 is to let a person return to a book quickly and read comfortably using physical buttons. PagePet is an optional companion that progresses with reading and requires no care.
 
-Порядок ниже фиксирует продуктовые приоритеты. Он не обещает сроки или поддержку функции до проверки на устройстве.
+These priorities describe the intended order, not release dates or claims of completed hardware support.
 
-## 1. Возврат к последней книге
+## 1. Resume the last book
 
-Сделать продолжение чтения заметным на главном экране и доступным за одно действие после включения. Сейчас кнопка «Назад» открывает последнюю книгу; нужно проверить, понятен ли этот путь без инструкции.
+Make the last book visible on Home and reachable in one action after boot. Back currently opens it; verify that this path is discoverable without instructions.
 
-Готово, когда на X3 можно найти и открыть последнюю книгу кнопками, вернуться к списку и продолжить с сохранённой позиции после сна и перезапуска. Проверить поведение при отсутствии книги или карты памяти.
+Done when the book can be found and opened with buttons, reading resumes at the saved position after sleep or restart, and missing-book or missing-card cases have clear paths back to Home.
 
-## 2. Настройки текста во время чтения
+## 2. Adjust text while reading
 
-Добавить небольшой кнопочный экран для размера шрифта и, если понадобится по результатам проверки, межстрочного интервала и полей. Вход и выход должны быть очевидны; «Назад» всегда возвращает к книге без потери позиции.
+Add a small button-operated screen for font size. Consider line spacing and margins after device feedback. Back must return to the book without losing position.
 
-Готово, когда изменение настройки перестраивает индекс страниц без потери места чтения и без нехватки памяти на X3. Проверить все пути кнопками на устройстве.
+Done when changing a setting rebuilds the page index without losing the reading position or exhausting X3 memory. Verify the entire button path on hardware.
 
-## 3. Восстановление после ошибок карты и кэша
+## 3. Recover from card and cache errors
 
-Показывать понятную ошибку и действие для повторной попытки. Повреждённый индекс страниц можно пересоздать; последняя сохранённая позиция должна переживать сбой.
+Show a clear error and retry action. A damaged page index should be rebuildable while the last saved reading position survives.
 
-Готово, когда после извлечения карты, прерванной записи кэша и перезапуска читатель может вернуться к книге кнопками. Проверить, что ошибка PagePet не блокирует чтение.
+Done when a reader can return to the book with buttons after card removal, interrupted cache writing, and restart. A PagePet save error must not block reading.
 
-## 4. EPUB и импорт книг
+## 4. EPUB and book import
 
-Сначала измерить на реальном X3 открытие обычных и сжатых книг, повторное открытие, перелистывание, переход ближе к концу, свободную память и размер кэша. По результатам выбрать встроенное чтение EPUB или преобразование при переносе книги. Не усложнять основной экран ради импорта.
+Measure first open, cached reopen, page turns, a jump near the end, free heap, largest free block, and cache size on a physical X3 with representative books. Use the results to choose native EPUB reading or conversion during transfer. Keep import controls out of the main reading path.
 
-Готово, когда выбранный способ не ухудшает обычное перелистывание и восстановление позиции.
+Done when the selected approach preserves ordinary page-turn responsiveness and position recovery.
 
-## Правило для PagePet
+## PagePet rule
 
-Питомец развивается от чтения без ежедневных заданий, всплывающих окон и обязательного ухода. Экран питомца открывается по желанию из списка книг. Чтение и сохранение позиции работают даже при ошибке состояния питомца.
+PagePet progresses through reading without daily tasks, page popups, or mandatory care. Its screen is entered voluntarily from Home. Reading and position saving continue if companion state fails.
 
-## Перед выпуском
+## Release gate
 
-На физических X3 с обоими вариантами контроллера экрана проверить кнопки, сон и пробуждение, отсутствие карты, восстановление после сбоя, первое и повторное открытие, скорость перелистывания, свободную память и наибольший доступный блок памяти. Сборка прошивки сама по себе не подтверждает готовность к выпуску.
+Test physical X3 units with both known display controllers: buttons, sleep/wake, missing card, interrupted writes, first and cached open, page-turn timing, free heap, and largest free block. A successful build alone does not establish release readiness.

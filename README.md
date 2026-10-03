@@ -1,38 +1,42 @@
 <p align="center">
-  <img src="assets/dragon.svg" alt="Дракончик PagePet" width="160" height="160">
+  <img src="assets/pagepet-reader-mascot.png" alt="PagePet dragon with an open book" width="180">
 </p>
 
 <h1 align="center">PagePet Reader</h1>
 
-<p align="center">Спокойная читалка для Xteink X3. Книга — в центре, дракончик — рядом.</p>
+<p align="center"><strong>Open firmware for Xteink X3.</strong> Focused reading, physical buttons, and an optional companion.</p>
 
-PagePet Reader — новая минималистичная прошивка для **Xteink X3**, которым управляют только кнопками. Она помогает вернуться к книге и продолжить чтение без лишних экранов. PagePet растёт по мере чтения, но не прерывает страницу, не требует ухода и не мешает читать.
+<p align="center"><a href="README.ru.md">Русский</a></p>
 
-## Что уже есть
+PagePet Reader is firmware for the **Xteink X3**. The primary experience is returning to a book and reading comfortably with physical buttons. PagePet develops quietly as you read. It never interrupts a page or asks for attention.
 
-- Чтение локальных UTF-8 книг `.txt` с microSD и сохранение позиции.
-- Повторное открытие с индексом страниц на карте памяти.
-- Кнопочный путь к списку книг, последней книге и экрану питомца.
-- Сон по кнопке питания; состояние книги и питомца сохраняется на microSD.
+## Current state
 
-**Состояние проекта:** ранняя разработка. Прошивка собирается, но чтение, сон, восстановление и оба варианта контроллера экрана X3 ещё нужно проверить на устройстве. EPUB и другие форматы пока не реализованы. Не используйте эту сборку как единственную прошивку для ежедневного чтения.
+This is an early development build. It currently provides:
 
-Дальнейшие приоритеты и критерии проверки описаны в [плане развития](docs/ROADMAP.md).
+- Local UTF-8 `.txt` reading from microSD with a page index stored on the card.
+- Saved reading position and a shortcut to the last book.
+- A button-only book list, PagePet screen, and English/Russian interface switch.
+- Sleep through the power button.
 
-## Управление
+The interface defaults to **English**. To switch to Russian, select **Language: English** on the home screen with Up/Down and press Confirm. The choice is saved on microSD. Select **Язык: Русский** the same way to switch back.
 
-| Где | Кнопки |
+Hardware reading, sleep, recovery, and both known X3 display-controller variants still need device validation. EPUB and other formats are not implemented yet. This build is not a stable daily-use release. See the [development priorities](docs/ROADMAP.md).
+
+## Button controls
+
+| Screen | Controls |
 | --- | --- |
-| Список книг | Вверх/вниз — выбрать; подтверждение — открыть; назад — продолжить последнюю книгу |
-| Чтение | Боковые кнопки — страницы назад/вперёд; назад — к списку |
-| PagePet | Выбрать в списке и подтвердить; назад — к списку |
-| Любой экран | Кнопка питания — сон |
+| Home | Up/Down: select a book, PagePet, or language. Confirm: open or switch. Back: resume the last book. |
+| Reading | Side buttons: previous/next page. Back: return to the book list. |
+| PagePet | Back: return to the book list. |
+| Any screen | Power button: sleep. |
 
-Положите `.txt` файлы в корень microSD. Сейчас отображаются первые 14 книг; вложенные папки пока не просматриваются.
+Place `.txt` files in the microSD root. The current list shows up to 14 books; folders are not browsed yet.
 
-## Сборка
+## Build
 
-Нужны Git и PlatformIO. Зависимости закреплены как Git-сабмодули:
+Git and PlatformIO are required. The hardware SDK and companion engine are pinned as submodules:
 
 ```sh
 git clone --recurse-submodules git@github.com:7box-studio/pagepet-reader.git
@@ -40,10 +44,10 @@ cd pagepet-reader
 pio run -e x3
 ```
 
-Прошивка использует [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) для дисплея, кнопок и движка чтения, а [PagePet](https://github.com/7box-studio/pagepet) — для питомца. Изображение дракончика основано на спрайте PagePet. Встроенный шрифт создан из DejaVu Sans; его условия находятся в `licenses/DejaVuSans-LICENSE.txt`.
+The firmware uses [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) for X3 hardware and book layout, and [PagePet](https://github.com/7box-studio/pagepet) for the companion. The embedded font is generated from DejaVu Sans; its license is in `licenses/DejaVuSans-LICENSE.txt`.
 
-## Сообщество
+## Community and license
 
-Обсуждение, идеи и новости: [t.me/pagepet_reader](https://t.me/pagepet_reader).
+Updates and discussion: [t.me/pagepet_reader](https://t.me/pagepet_reader).
 
-Исходный код этой прошивки распространяется по [лицензии MIT](LICENSE). Зависимости и шрифт сохраняют собственные лицензии.
+The firmware source is available under the [MIT license](LICENSE). Dependencies and the font retain their own licenses.
