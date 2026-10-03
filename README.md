@@ -15,8 +15,9 @@ PagePet Reader is firmware for the **Xteink X3**. The primary experience is retu
 This is an early development build. It currently provides:
 
 - Local UTF-8 `.txt` reading from microSD with a page index stored on the card.
-- Saved reading position and a shortcut to the last book.
+- Saved reading position and a visible Resume row for the last book.
 - A button-only book list, PagePet screen, and English/Russian interface switch.
+- Two text sizes from the reading screen; the current position is retained when pages are rebuilt.
 - Sleep through the power button.
 
 The interface defaults to **English**. To switch to Russian, select **Language: English** on the home screen with Up/Down and press Confirm. The choice is saved on microSD. Select **Язык: Русский** the same way to switch back.
@@ -27,8 +28,8 @@ Hardware reading, sleep, recovery, and both known X3 display-controller variants
 
 | Screen | Controls |
 | --- | --- |
-| Home | Up/Down: select a book, PagePet, or language. Confirm: open or switch. Back: resume the last book. |
-| Reading | Side buttons: previous/next page. Back: return to the book list. |
+| Home | The Resume row shows the saved book. Back resumes it; Up/Down selects a book, PagePet, or language. Confirm opens or switches. |
+| Reading | Side buttons: previous/next page. Confirm: reading settings. Back: return to the book list. |
 | PagePet | Back: return to the book list. |
 | Any screen | Power button: sleep. |
 
@@ -44,7 +45,7 @@ cd pagepet-reader
 pio run -e x3
 ```
 
-The firmware uses [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) for X3 hardware and book layout, and [PagePet](https://github.com/7box-studio/pagepet) for the companion. The embedded font is generated from DejaVu Sans; its license is in `licenses/DejaVuSans-LICENSE.txt`.
+The firmware uses [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) for X3 hardware and book layout, and [PagePet](https://github.com/7box-studio/pagepet) for the companion. The two embedded reader sizes are generated from DejaVu Sans; its license is in `licenses/DejaVuSans-LICENSE.txt`.
 
 ## Community and license
 

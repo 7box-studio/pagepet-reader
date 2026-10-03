@@ -11,14 +11,16 @@
 using namespace freeink::book;
 
 bool TextReader::open(SDCardManager& card, freeink::FreeInkDisplay& display, const char* path,
-                      uint32_t savedChar, uint16_t width, uint16_t height) {
+                      uint32_t savedChar, uint16_t width, uint16_t height, TextSize textSize) {
   close();
+  textSize_ = textSize;
   if (strlen(path) >= sizeof(path_) || !source_.open(card, path)) return false;
   memcpy(path_, path, strlen(path) + 1);
   if (!cache_.open(card, bookIdFor(path))) return false;
 
   fonts_ = FontChain{};
-  if (!fonts_.add(&bitmapFont_)) return false;
+  auto* activeFont = textSize_ == TextSize::Small ? &smallFont_ : &standardFont_;
+  if (!fonts_.add(activeFont)) return false;
   layout_ = LayoutParams{};
   layout_.pageWidth = width;
   layout_.pageHeight = height;
@@ -26,7 +28,7 @@ bool TextReader::open(SDCardManager& card, freeink::FreeInkDisplay& display, con
   layout_.marginRight = 26;
   layout_.marginTop = 32;
   layout_.marginBottom = 46;
-  layout_.baseSizePx = 22;
+  layout_.baseSizePx = textSize_ == TextSize::Small ? 18 : 22;
   layout_.font = &fonts_;
   generation_ = layoutGenerationHash(layout_, 0x50455401u);
   if (!pageCacheName(0, generation_, cacheName_, sizeof(cacheName_)) || !prepareCache(display)) {

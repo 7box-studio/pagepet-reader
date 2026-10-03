@@ -6,13 +6,13 @@ These priorities describe the intended order, not release dates or claims of com
 
 ## 1. Resume the last book
 
-Make the last book visible on Home and reachable in one action after boot. Back currently opens it; verify that this path is discoverable without instructions.
+The Home screen now shows the saved book in a visible Resume row, while Back opens it in one action. Verify that this path is discoverable without instructions.
 
 Done when the book can be found and opened with buttons, reading resumes at the saved position after sleep or restart, and missing-book or missing-card cases have clear paths back to Home.
 
 ## 2. Adjust text while reading
 
-Add a small button-operated screen for font size. Consider line spacing and margins after device feedback. Back must return to the book without losing position.
+The reading screen now has a small button-operated text-size screen with Small and Standard sizes. Consider line spacing and margins after device feedback. Back returns to the book without losing position.
 
 Done when changing a setting rebuilds the page index without losing the reading position or exhausting X3 memory. Verify the entire button path on hardware.
 
