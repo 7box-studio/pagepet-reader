@@ -19,6 +19,7 @@ This is an early development build. It currently provides:
 - A button-only book list, PagePet screen, and English/Russian interface switch.
 - Two text sizes from the reading screen; the current position is retained when pages are rebuilt.
 - Sleep through the power button.
+- Retry and return-home actions on book, page, and cache errors.
 
 The interface defaults to **English**. To switch to Russian, select **Language: English** on the home screen with Up/Down and press Confirm. The choice is saved on microSD. Select **Язык: Русский** the same way to switch back.
 
@@ -31,6 +32,7 @@ Hardware reading, sleep, recovery, and both known X3 display-controller variants
 | Home | The Resume row shows the saved book. Back resumes it; Up/Down selects a book, PagePet, or language. Confirm opens or switches. |
 | Reading | Side buttons: previous/next page. Confirm: reading settings. Back: return to the book list. |
 | PagePet | Back: return to the book list. |
+| Error | Confirm: retry the failed book or page. Back: return Home. |
 | Any screen | Power button: sleep. |
 
 Place `.txt` files in the microSD root. The current list shows up to 14 books; folders are not browsed yet.

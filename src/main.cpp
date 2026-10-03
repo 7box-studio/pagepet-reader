@@ -74,6 +74,8 @@ TextReader::TextSize pendingTextSize = TextReader::TextSize::Standard;
 uint32_t lastStateWriteMs = 0;
 bool wakePowerReleasePending = true;
 char errorText[64]{};
+char errorPath[sizeof(saved.path)]{};
+bool errorCanRetry = false;
 
 const char* uiText(strings::Text key) { return strings::tr(key, language); }
 
@@ -91,15 +93,18 @@ void label(ui::DisplayTarget& target, int x, int y, int w, const char* value,
   target.text({static_cast<int16_t>(x), static_cast<int16_t>(y), static_cast<int16_t>(w), 30}, value, style);
 }
 
-void showError(const char* message) {
+void showError(const char* message, bool canRetry = false, const char* path = nullptr) {
   snprintf(errorText, sizeof(errorText), "%s", message);
+  errorCanRetry = canRetry && path != nullptr && path[0] != '\0';
+  if (errorCanRetry) snprintf(errorPath, sizeof(errorPath), "%s", path);
+  else errorPath[0] = '\0';
   screen = Screen::Error;
   if (!display.getFrameBuffer()) return;
   display.clearScreen();
   auto target = canvas();
   label(target, 24, 48, 740, uiText(strings::Text::Title));
   label(target, 24, 150, 740, errorText);
-  label(target, 24, 482, 740, uiText(strings::Text::BackHint));
+  label(target, 24, 482, 740, uiText(errorCanRetry ? strings::Text::ErrorHint : strings::Text::BackHint));
   display.displayBuffer(freeink::FreeInkDisplay::HALF_REFRESH);
 }
 
@@ -279,14 +284,16 @@ void openBook(const char* path) {
   }
   const uint32_t offset = strcmp(saved.path, absolute) == 0 ? saved.characterOffset : 0;
   if (!reader.open(card, display, absolute, offset, display.getDisplayHeight(), display.getDisplayWidth(), textSize)) {
-    showError(uiText(strings::Text::OpenError));
+    showError(uiText(strings::Text::OpenError), true, absolute);
     return;
   }
   pet.beginSession(millis());
   screen = Screen::Reading;
   if (!reader.render(display)) {
+    char failedPath[sizeof(saved.path)]{};
+    snprintf(failedPath, sizeof(failedPath), "%s", reader.path());
     reader.close();
-    showError(uiText(strings::Text::PageError));
+    showError(uiText(strings::Text::PageError), true, failedPath);
     return;
   }
   petRenderedPage();
@@ -322,15 +329,17 @@ bool applyTextSize() {
   display.displayBuffer(freeink::FreeInkDisplay::HALF_REFRESH);
   reader.close();
   if (!reader.open(card, display, path, offset, display.getDisplayHeight(), display.getDisplayWidth(), pendingTextSize)) {
-    showError(uiText(strings::Text::OpenError));
+    showError(uiText(strings::Text::OpenError), true, path);
     return false;
   }
   textSize = pendingTextSize;
   saveSettings();
   screen = Screen::Reading;
   if (!reader.render(display)) {
+    char failedPath[sizeof(saved.path)]{};
+    snprintf(failedPath, sizeof(failedPath), "%s", reader.path());
     reader.close();
-    showError(uiText(strings::Text::PageError));
+    showError(uiText(strings::Text::PageError), true, failedPath);
     return false;
   }
   saveState(true);
@@ -343,6 +352,20 @@ void closeBook() {
   reader.close();
   scanBooks();
   drawHome();
+}
+
+void retryError() {
+  char path[sizeof(errorPath)]{};
+  snprintf(path, sizeof(path), "%s", errorPath);
+  errorCanRetry = false;
+  reader.close();
+  card.shutdown();
+  cardReady = false;
+  if (!mountCard()) {
+    showError(uiText(strings::Text::NoCard));
+    return;
+  }
+  openBook(path[0] == '/' ? path + 1 : path);
 }
 
 void drawCompanion() {
@@ -431,25 +454,32 @@ void loop() {
       pendingTextSize = textSize;
       drawReadingSettings();
     } else if (input.wasReleased(InputManager::BTN_UP)) {
-      if (reader.previous() && !reader.render(display)) showError(uiText(strings::Text::PageError));
+      if (reader.previous() && !reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
       saveState();
     } else if (input.wasReleased(InputManager::BTN_DOWN)) {
       if (reader.next()) {
         if (reader.render(display)) petRenderedPage();
-        else showError(uiText(strings::Text::PageError));
+        else showError(uiText(strings::Text::PageError), true, reader.path());
         saveState();
       }
     }
   } else if (screen == Screen::ReadingSettings) {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       screen = Screen::Reading;
-      if (!reader.render(display)) showError(uiText(strings::Text::PageError));
+      if (!reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
     } else if (input.wasReleased(InputManager::BTN_UP) || input.wasReleased(InputManager::BTN_DOWN)) {
       pendingTextSize = pendingTextSize == TextReader::TextSize::Small ? TextReader::TextSize::Standard
                                                                         : TextReader::TextSize::Small;
       drawReadingSettings();
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
       applyTextSize();
+    }
+  } else if (screen == Screen::Error) {
+    if (input.wasReleased(InputManager::BTN_CONFIRM) && errorCanRetry) {
+      retryError();
+    } else if (input.wasReleased(InputManager::BTN_BACK)) {
+      reader.close();
+      drawHome();
     }
   } else if (input.wasReleased(InputManager::BTN_BACK)) {
     reader.close();

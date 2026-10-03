@@ -18,7 +18,7 @@ Done when changing a setting rebuilds the page index without losing the reading 
 
 ## 3. Recover from card and cache errors
 
-Show a clear error and retry action. A damaged page index should be rebuildable while the last saved reading position survives.
+The error screen now shows a clear retry action and a Home path. A damaged page index is rebuilt on retry while the last saved reading position survives.
 
 Done when a reader can return to the book with buttons after card removal, interrupted cache writing, and restart. A PagePet save error must not block reading.
 

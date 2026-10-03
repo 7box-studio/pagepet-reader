@@ -27,6 +27,7 @@ enum class Text : uint8_t {
   TextSizeStandard,
   SettingsHint,
   Rebuilding,
+  ErrorHint,
   Count,
 };
 
@@ -37,6 +38,7 @@ inline const char* tr(Text key, Language language) {
       "UP/DOWN  select   OK  open   BACK  resume", "OK  retry card", "BACK  books", "Could not open this book",
       "Could not load this page", "Pages read: %lu", "Reading settings", "Text size", "Small",
       "Standard", "UP/DOWN  change   OK  apply   BACK  reading", "Rebuilding pages...",
+      "OK  retry   BACK  home",
   };
   static constexpr const char* RU[] = {
       "PagePet Reader", "Книги", "Вставьте карту microSD", "Добавьте книги .txt в корень карты",
@@ -44,6 +46,7 @@ inline const char* tr(Text key, Language language) {
       "ВВЕРХ/ВНИЗ  выбор   OK  открыть   НАЗАД  читать", "OK  повторить", "НАЗАД  к книгам", "Не удалось открыть книгу",
       "Не удалось загрузить страницу", "Прочитано страниц: %lu", "Настройки чтения", "Размер текста",
       "Мелкий", "Стандартный", "ВВЕРХ/ВНИЗ  изменить   OK  применить   НАЗАД  книга", "Перестраиваем страницы...",
+      "OK  повторить   НАЗАД  домой",
   };
   static_assert(sizeof(EN) / sizeof(EN[0]) == static_cast<unsigned>(Text::Count));
   static_assert(sizeof(RU) / sizeof(RU[0]) == static_cast<unsigned>(Text::Count));
