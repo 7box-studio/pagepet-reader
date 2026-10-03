@@ -1,0 +1,6 @@
+.pio/
+.cache/
+platformio.local.ini
+*.bin
+AGENTS.md
+docs/PRODUCT.md

@@ -1,0 +1,6 @@
+[submodule "third_party/freeink-sdk"]
+	path = third_party/freeink-sdk
+	url = https://github.com/Free-Ink/freeink-sdk.git
+[submodule "third_party/pagepet"]
+	path = third_party/pagepet
+	url = https://github.com/7box-studio/pagepet.git

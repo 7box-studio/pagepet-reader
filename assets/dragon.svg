@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-labelledby="title desc">
+<title id="title">PagePet — дракончик</title>
+<desc id="desc">Пиксельный дракончик из PagePet на светлом фоне.</desc>
+<rect width="192" height="192" rx="40" fill="#f7f4e9"/>
+<path d="M24 151h144v15H24z" fill="#df7652"/>
+<path d="M48 32h16v8h-16zM128 32h16v8h-16zM48 40h24v8h-24zM120 40h24v8h-24zM56 48h24v8h-24zM112 48h24v8h-24zM32 56h8v8h-8zM64 56h64v8h-64zM152 56h8v8h-8zM32 64h16v8h-16zM56 64h80v8h-80zM144 64h16v8h-16zM32 72h128v8h-128zM40 80h32v8h-32zM80 80h32v8h-32zM120 80h32v8h-32zM48 88h32v8h-32zM88 88h16v8h-16zM112 88h32v8h-32zM48 96h96v8h-96zM56 104h80v8h-80zM48 112h32v8h-32zM96 112h8v8h-8zM120 112h24v8h-24zM40 120h32v8h-32zM88 120h16v8h-16zM120 120h32v8h-32zM32 128h40v8h-40zM88 128h16v8h-16zM120 128h40v8h-40zM56 136h80v8h-80zM48 144h32v8h-32zM96 144h8v8h-8zM120 144h24v8h-24zM40 152h16v8h-16zM136 152h16v8h-16z" fill="#243e39"/>
+</svg>
