@@ -25,6 +25,8 @@ The interface defaults to **English**. To switch to Russian, select **Language: 
 
 Hardware reading, sleep, recovery, and both known X3 display-controller variants still need device validation. EPUB and other formats are not implemented yet. This build is not a stable daily-use release. See the [development priorities](docs/ROADMAP.md).
 
+The measurement procedure for future hardware runs is in the [X3 benchmark checklist](docs/X3-BENCHMARK.md).
+
 ## Button controls
 
 | Screen | Controls |
