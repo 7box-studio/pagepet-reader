@@ -21,6 +21,9 @@ enum class Text : uint8_t {
   OpenError,
   PageError,
   PagesRead,
+  PetLevel,
+  PetXp,
+  SessionPages,
   Settings,
   TextSize,
   TextSizeSmall,
@@ -36,7 +39,7 @@ inline const char* tr(Text key, Language language) {
       "PagePet Reader", "Books", "Insert a microSD card", "Add .txt books to the card root",
       "PagePet", "Language: English", "Resume: %s", "No saved book",
       "UP/DOWN  select   OK  open   BACK  resume", "OK  retry card", "BACK  books", "Could not open this book",
-      "Could not load this page", "Pages read: %lu", "Reading settings", "Text size", "Small",
+      "Could not load this page", "Pages read: %lu", "Level: %u", "XP: %lu", "This session: %u", "Reading settings", "Text size", "Small",
       "Standard", "UP/DOWN  change   OK  apply   BACK  reading", "Rebuilding pages...",
       "OK  retry   BACK  home",
   };
@@ -44,7 +47,7 @@ inline const char* tr(Text key, Language language) {
       "PagePet Reader", "Книги", "Вставьте карту microSD", "Добавьте книги .txt в корень карты",
       "PagePet", "Язык: Русский", "Продолжить: %s", "Нет сохранённой книги",
       "ВВЕРХ/ВНИЗ  выбор   OK  открыть   НАЗАД  читать", "OK  повторить", "НАЗАД  к книгам", "Не удалось открыть книгу",
-      "Не удалось загрузить страницу", "Прочитано страниц: %lu", "Настройки чтения", "Размер текста",
+      "Не удалось загрузить страницу", "Прочитано страниц: %lu", "Уровень: %u", "Опыт: %lu", "За сеанс: %u", "Настройки чтения", "Размер текста",
       "Мелкий", "Стандартный", "ВВЕРХ/ВНИЗ  изменить   OK  применить   НАЗАД  книга", "Перестраиваем страницы...",
       "OK  повторить   НАЗАД  домой",
   };

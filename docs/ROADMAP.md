@@ -28,6 +28,12 @@ Measure first open, cached reopen, page turns, a jump near the end, free heap, l
 
 Done when the selected approach preserves ordinary page-turn responsiveness and position recovery.
 
+### EPUB footnotes and endnotes
+
+When EPUB support is added, preserve links from superscript note markers to their note text. On the button-only X3, Confirm opens the current page's link list; Up/Down selects a note, Confirm opens it, and Back returns to the exact reading position. A single link may open directly. Long notes must remain readable across pages. Viewing a note must not award PagePet reading progress.
+
+This requires resolving the marker's `href` and fragment, navigating within or across EPUB files, and retaining the source position independently of the note position. FreeInkBook already lays out superscripts and stores page links and anchors; PagePet Reader still needs the button navigation and return state. Test same-file and separate-file notes, multiple notes on one page, long notes, broken targets, and sleep/wake while a note is open. Do not overwrite the saved book position with the note position.
+
 ## PagePet rule
 
 PagePet progresses through reading without daily tasks, page popups, or mandatory care. Its screen is entered voluntarily from Home. Reading and position saving continue if companion state fails.

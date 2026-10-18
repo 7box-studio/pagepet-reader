@@ -9,6 +9,7 @@
 #include <XteinkDetect.h>
 #include <character_art.h>
 #include <companion_engine.h>
+#include <progression.h>
 
 #include <cstdio>
 #include <cstring>
@@ -388,6 +389,15 @@ void drawCompanion() {
   snprintf(progress, sizeof(progress), uiText(strings::Text::PagesRead),
            static_cast<unsigned long>(pet.state().valid_pages));
   label(target, 24, 306, 740, progress, ui::TextAlign::Center);
+  snprintf(progress, sizeof(progress), uiText(strings::Text::PetLevel),
+           static_cast<unsigned>(companion::levelForXp(pet.state().total_xp)));
+  label(target, 24, 344, 740, progress, ui::TextAlign::Center);
+  snprintf(progress, sizeof(progress), uiText(strings::Text::PetXp),
+           static_cast<unsigned long>(pet.state().total_xp));
+  label(target, 24, 382, 740, progress, ui::TextAlign::Center);
+  snprintf(progress, sizeof(progress), uiText(strings::Text::SessionPages),
+           static_cast<unsigned>(pet.state().session_pages));
+  label(target, 24, 420, 740, progress, ui::TextAlign::Center);
   label(target, 24, 482, 740, uiText(strings::Text::BackHint));
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }
