@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <BoardConfig.h>
+#include <DragonSprite.h>
 #include <FreeInkDisplay.h>
 #include <FreeInkUIDisplayTarget.h>
 #include <InputManager.h>
@@ -7,7 +8,6 @@
 #include <ReaderFont.h>
 #include <SDCardManager.h>
 #include <XteinkDetect.h>
-#include <character_art.h>
 #include <companion_engine.h>
 #include <progression.h>
 
@@ -374,30 +374,26 @@ void drawCompanion() {
   display.clearScreen();
   auto target = canvas();
   label(target, 24, 24, 740, uiText(strings::Text::Companion));
-  uint8_t sprite[companion::kSpriteBytes]{};
-  if (companion::renderCharacter(pet.state().character_class, sprite, sizeof(sprite))) {
-    for (int y = 0; y < 16; ++y) {
-      for (int x = 0; x < 16; ++x) {
-        if (sprite[y * 2 + x / 8] & (0x80u >> (x & 7))) {
-          target.fill({static_cast<int16_t>(348 + x * 6), static_cast<int16_t>(140 + y * 6), 6, 6},
-                      ui::Paint::solid(ui::Color::Black));
-        }
-      }
-    }
-  }
+  // The checked-in 1bpp art stays in flash. drawImage reads it directly into
+  // the existing display framebuffer; no 256x256 scratch allocation is needed.
+  // Byte alignment selects FreeInkDisplay's fast 1bpp blit path on the X3.
+  const uint16_t spriteX = static_cast<uint16_t>(
+      ((display.getDisplayWidth() - dragon_art::kWidth) / 2) & ~7u);
+  display.drawImage(dragon_art::kBitmap, spriteX, 70, dragon_art::kWidth,
+                    dragon_art::kHeight, true);
   char progress[64];
   snprintf(progress, sizeof(progress), uiText(strings::Text::PagesRead),
            static_cast<unsigned long>(pet.state().valid_pages));
-  label(target, 24, 306, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 340, 740, progress, ui::TextAlign::Center);
   snprintf(progress, sizeof(progress), uiText(strings::Text::PetLevel),
            static_cast<unsigned>(companion::levelForXp(pet.state().total_xp)));
-  label(target, 24, 344, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 376, 740, progress, ui::TextAlign::Center);
   snprintf(progress, sizeof(progress), uiText(strings::Text::PetXp),
            static_cast<unsigned long>(pet.state().total_xp));
-  label(target, 24, 382, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 412, 740, progress, ui::TextAlign::Center);
   snprintf(progress, sizeof(progress), uiText(strings::Text::SessionPages),
            static_cast<unsigned>(pet.state().session_pages));
-  label(target, 24, 420, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 448, 740, progress, ui::TextAlign::Center);
   label(target, 24, 482, 740, uiText(strings::Text::BackHint));
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }

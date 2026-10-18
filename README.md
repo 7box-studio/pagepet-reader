@@ -17,6 +17,7 @@ This is an early development build. It currently provides:
 - Local UTF-8 `.txt` reading from microSD with a page index stored on the card.
 - Saved reading position and a visible Resume row for the last book.
 - A button-only book list, PagePet screen, and English/Russian interface switch.
+- A monochrome dragon on the optional PagePet screen, drawn from an 8 KB flash-resident sprite without an extra image buffer.
 - Two text sizes from the reading screen; the current position is retained when pages are rebuilt.
 - Sleep through the power button.
 - Retry and return-home actions on book, page, and cache errors.
@@ -50,6 +51,8 @@ pio run -e x3
 ```
 
 The firmware uses [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk) for X3 hardware and book layout, and [PagePet](https://github.com/7box-studio/pagepet) for the companion. The two embedded reader sizes are generated from DejaVu Sans; its license is in `licenses/DejaVuSans-LICENSE.txt`.
+
+The pet artwork source is `assets/pagepet-dragon.svg`. After changing it, run `python3 tools/generate_dragon_sprite.py` (requires ImageMagick) and commit the regenerated `include/DragonSprite.h`. Only the 1-bit sprite is compiled into firmware; the color SVG is not loaded on the X3.
 
 ## Community and license
 
