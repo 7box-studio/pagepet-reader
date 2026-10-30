@@ -1,4 +1,5 @@
 #include "Storage.h"
+#include <Arduino.h>
 
 #include <cstdio>
 #include <cstring>
@@ -15,25 +16,50 @@ bool SdBookSource::open(SDCardManager& card, const char* path) {
   file_ = card.open(path, O_RDONLY);
   if (!file_) return false;
   length_ = file_.size();
+  uint16_t date = 0, time = 0;
+  file_.getModifyDateTime(&date, &time);
+  revision_ = static_cast<uint32_t>(length_) ^ static_cast<uint32_t>(length_ >> 32) ^
+              (static_cast<uint32_t>(date) << 16 | time);
   return true;
 }
 
 void SdBookSource::close() {
   if (file_) file_.close();
   length_ = 0;
+  revision_ = 0;
 }
 
 int32_t SdBookSource::readAt(uint64_t offset, void* dst, uint32_t len) {
+  // Source reads happen during import/layout/image decode, never on ordinary
+  // cached text turns. Feed the scheduler even for huge OPF/TOC documents.
+  if (millis() - lastYieldMs_ >= 20) {
+    delay(1);
+    lastYieldMs_ = millis();
+  }
   if (!file_ || offset > std::numeric_limits<uint32_t>::max() || len > INT32_MAX || !file_.seekSet(offset)) return -1;
   return file_.read(dst, len);
 }
 
 bool SdCache::open(SDCardManager& card, uint32_t bookId) {
+  close();
   card_ = &card;
   if (!card.mkdir("/.pagepet", true) && !card.exists("/.pagepet")) return false;
   if (!card.mkdir("/.pagepet/cache", true) && !card.exists("/.pagepet/cache")) return false;
   snprintf(dir_, sizeof(dir_), "/.pagepet/cache/%08lx", static_cast<unsigned long>(bookId));
   return card.mkdir(dir_, true) || card.exists(dir_);
+}
+
+void SdCache::abortWrite() {
+  if (output_) output_.close();
+  if (card_ && temp_[0] && card_->exists(temp_)) card_->remove(temp_);
+  temp_[0] = final_[0] = '\0';
+}
+
+void SdCache::close() {
+  abortWrite();
+  if (input_) input_.close();
+  inputPath_[0] = '\0';
+  card_ = nullptr;
 }
 
 bool SdCache::pathFor(const char* name, char* out, size_t cap) const {
@@ -49,7 +75,13 @@ bool SdCache::exists(const char* name) {
 
 bool SdCache::remove(const char* name) {
   char path[96];
-  return pathFor(name, path, sizeof(path)) && card_->remove(path);
+  if (!pathFor(name, path, sizeof(path))) return false;
+  if (strcmp(path, final_) == 0) abortWrite();
+  if (strcmp(path, inputPath_) == 0) {
+    input_.close();
+    inputPath_[0] = '\0';
+  }
+  return !card_->exists(path) || card_->remove(path);
 }
 
 int64_t SdCache::fileSize(const char* name) {
@@ -62,14 +94,23 @@ int64_t SdCache::fileSize(const char* name) {
 int32_t SdCache::readAt(const char* name, uint32_t offset, void* dst, uint32_t len) {
   char path[96];
   if (!pathFor(name, path, sizeof(path)) || len > INT32_MAX) return -1;
-  FsFile file = card_->open(path, O_RDONLY);
-  if (!file || !file.seekSet(offset)) return -1;
-  return file.read(dst, len);
+  if (!input_ || strcmp(path, inputPath_) != 0) {
+    if (input_) input_.close();
+    input_ = card_->open(path, O_RDONLY);
+    if (!input_) return -1;
+    memcpy(inputPath_, path, strlen(path) + 1);
+  }
+  if (!input_.seekSet(offset)) return -1;
+  return input_.read(dst, len);
 }
 
 bool SdCache::beginWrite(const char* name) {
-  if (output_) output_.close();
+  abortWrite();
   if (!pathFor(name, final_, sizeof(final_))) return false;
+  if (strcmp(final_, inputPath_) == 0) {
+    input_.close();
+    inputPath_[0] = '\0';
+  }
   const int n = snprintf(temp_, sizeof(temp_), "%s.part", final_);
   if (n <= 0 || static_cast<size_t>(n) >= sizeof(temp_)) return false;
   if (card_->exists(temp_)) card_->remove(temp_);
@@ -96,7 +137,9 @@ bool SdCache::endWrite() {
   output_.close();
   if (!synced) return false;
   if (card_->exists(final_) && !card_->remove(final_)) return false;
-  return card_->rename(temp_, final_);
+  const bool renamed = card_->rename(temp_, final_);
+  if (renamed) temp_[0] = final_[0] = '\0';
+  return renamed;
 }
 
 bool writeAtomic(SDCardManager& card, const char* path, const void* data, size_t size) {

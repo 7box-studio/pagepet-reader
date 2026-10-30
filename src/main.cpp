@@ -17,6 +17,10 @@
 #include "Storage.h"
 #include "Strings.h"
 #include "TextReader.h"
+#include "BookFormat.h"
+#include "ReadingState.h"
+#include "ReaderChrome.h"
+#include "LibraryBrowser.h"
 
 namespace {
 namespace ui = freeink::ui;
@@ -24,21 +28,13 @@ namespace ui = freeink::ui;
 constexpr char STATE_PATH[] = "/.pagepet/state.dat";
 constexpr char PET_PATH[] = "/.pagepet/pet.dat";
 constexpr char SETTINGS_PATH[] = "/.pagepet/settings.dat";
-constexpr uint32_t STATE_MAGIC = 0x50505431;
-constexpr uint32_t STATE_VERSION = 1;
+constexpr uint32_t STATE_MAGIC = READING_STATE_MAGIC;
+constexpr uint32_t STATE_VERSION = READING_STATE_VERSION;
 constexpr uint32_t SETTINGS_MAGIC = 0x50504c31;
 constexpr uint32_t SETTINGS_VERSION = 2;
-constexpr size_t MAX_BOOKS = 14;
-constexpr size_t VISIBLE_ITEMS = 8;
-constexpr size_t NAME_BYTES = 96;
+enum HomeItem : uint8_t { ResumeItem, LibraryItem, PetItem, LanguageItem, HomeItemCount };
 
-struct SavedState {
-  uint32_t magic;
-  uint32_t version;
-  uint32_t characterOffset;
-  char path[128];
-  uint32_t checksum;
-};
+using SavedState = ReadingState;
 
 struct SavedSettings {
   uint32_t magic;
@@ -60,14 +56,14 @@ freeink::FreeInkDisplay display(pins.sclk, pins.mosi, pins.cs, pins.dc, pins.rst
 InputManager input;
 SDCardManager& card = SDCardManager::getInstance();
 TextReader reader;
+ReaderChrome chrome;
+LibraryBrowser library;
 companion::CompanionEngine pet;
 
-enum class Screen : uint8_t { Home, Reading, ReadingSettings, Companion, Error };
+enum class Screen : uint8_t { Home, Library, Reading, ReadingSettings, Companion, Error };
 Screen screen = Screen::Home;
 bool cardReady = false;
-char bookNames[MAX_BOOKS][NAME_BYTES]{};
-size_t bookCount = 0;
-size_t selection = 0;
+size_t selection = LibraryItem;
 SavedState saved{};
 strings::Language language = strings::Language::English;
 TextReader::TextSize textSize = TextReader::TextSize::Standard;
@@ -77,6 +73,7 @@ bool wakePowerReleasePending = true;
 char errorText[64]{};
 char errorPath[sizeof(saved.path)]{};
 bool errorCanRetry = false;
+bool errorIsLibrary = false;
 
 const char* uiText(strings::Text key) { return strings::tr(key, language); }
 
@@ -89,12 +86,52 @@ ui::DisplayTarget canvas() {
 
 void label(ui::DisplayTarget& target, int x, int y, int w, const char* value,
            ui::TextAlign align = ui::TextAlign::Left) {
+  const int available = target.logicalWidth() - x - 24;
+  if (w > available) w = available;
   ui::TextStyle style{};
   style.align = align;
   target.text({static_cast<int16_t>(x), static_cast<int16_t>(y), static_cast<int16_t>(w), 30}, value, style);
 }
 
+bool previousReleased() {
+  return input.wasReleased(InputManager::BTN_UP) || input.wasReleased(InputManager::BTN_LEFT);
+}
+
+bool nextReleased() {
+  return input.wasReleased(InputManager::BTN_DOWN) || input.wasReleased(InputManager::BTN_RIGHT);
+}
+
+void drawChrome(Screen view) {
+  ReaderButtonHints hints{};
+  if (view == Screen::Home) {
+    if (cardReady) {
+      if (saved.path[0] && card.exists(saved.path)) hints.back = uiText(strings::Text::HintResume);
+      hints.confirm = uiText(strings::Text::HintChoose);
+      hints.previous = uiText(strings::Text::HintUp);
+      hints.next = uiText(strings::Text::HintDown);
+      hints.sides = true;
+    } else hints.confirm = uiText(strings::Text::HintRetry);
+  } else if (view == Screen::Library) {
+    hints = {uiText(library.atRoot() ? strings::Text::HintHome : strings::Text::HintParent),
+             library.count() ? uiText(strings::Text::HintOpen) : "",
+             library.count() ? uiText(strings::Text::HintUp) : "",
+             library.count() ? uiText(strings::Text::HintDown) : "", library.count() > 0};
+  } else if (view == Screen::Reading) {
+    hints = {uiText(strings::Text::HintBooks), uiText(strings::Text::HintText),
+             uiText(strings::Text::HintPrevious), uiText(strings::Text::HintNext), true};
+  } else if (view == Screen::ReadingSettings) {
+    hints = {uiText(strings::Text::HintRead), uiText(strings::Text::HintApply),
+             uiText(strings::Text::HintUp), uiText(strings::Text::HintDown), true};
+  } else if (view == Screen::Companion) hints.back = uiText(strings::Text::HintHome);
+  else if (view == Screen::Error) {
+    hints.back = uiText(strings::Text::HintHome);
+    if (errorCanRetry) hints.confirm = uiText(strings::Text::HintRetry);
+  }
+  chrome.draw(display, hints);
+}
+
 void showError(const char* message, bool canRetry = false, const char* path = nullptr) {
+  errorIsLibrary = false;
   snprintf(errorText, sizeof(errorText), "%s", message);
   errorCanRetry = canRetry && path != nullptr && path[0] != '\0';
   if (errorCanRetry) snprintf(errorPath, sizeof(errorPath), "%s", path);
@@ -105,30 +142,17 @@ void showError(const char* message, bool canRetry = false, const char* path = nu
   auto target = canvas();
   label(target, 24, 48, 740, uiText(strings::Text::Title));
   label(target, 24, 150, 740, errorText);
-  label(target, 24, 482, 740, uiText(errorCanRetry ? strings::Text::ErrorHint : strings::Text::BackHint));
+  drawChrome(Screen::Error);
   display.displayBuffer(freeink::FreeInkDisplay::HALF_REFRESH);
 }
 
-bool hasTxtExtension(const char* name) {
-  const size_t len = strlen(name);
-  if (len < 4) return false;
-  const char* suffix = name + len - 4;
-  return (suffix[0] == '.' && (suffix[1] == 't' || suffix[1] == 'T') &&
-          (suffix[2] == 'x' || suffix[2] == 'X') && (suffix[3] == 't' || suffix[3] == 'T'));
-}
+bool canResume() { return cardReady && saved.path[0] && card.exists(saved.path); }
 
-void scanBooks() {
-  bookCount = 0;
-  FsFile root = card.open("/", O_RDONLY);
-  if (!root || !root.isDirectory()) return;
-  root.rewindDirectory();
-  for (FsFile entry = root.openNextFile(); entry && bookCount < MAX_BOOKS; entry = root.openNextFile()) {
-    if (entry.isDirectory()) continue;
-    char name[NAME_BYTES]{};
-    if (!entry.getName(name, sizeof(name)) || !hasTxtExtension(name)) continue;
-    memcpy(bookNames[bookCount++], name, sizeof(name));
-  }
-  if (selection > bookCount + 1) selection = 0;
+void smallLabel(ui::DisplayTarget& target, int x, int y, int width, const char* value,
+                ui::TextAlign align = ui::TextAlign::Left) {
+  target.setFont(ui::kReaderSmallFont);
+  label(target, x, y, width, value, align);
+  target.setFont(ui::kReaderFont);
 }
 
 void drawHome() {
@@ -136,53 +160,90 @@ void drawHome() {
   if (!display.getFrameBuffer()) return;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 24, 740, uiText(strings::Text::Title));
-  target.line({24, 60}, {768, 60}, 1, ui::Paint::solid(ui::Color::Black));
-  if (!cardReady) {
-    label(target, 24, 118, 740, uiText(strings::Text::NoCard));
-    label(target, 24, 482, 740, uiText(strings::Text::RetryHint));
-  } else {
-    char resumeLabel[NAME_BYTES + 32]{};
-    if (saved.path[0] != '\0' && card.exists(saved.path)) {
-      const char* resumeName = saved.path[0] == '/' ? saved.path + 1 : saved.path;
-      snprintf(resumeLabel, sizeof(resumeLabel), uiText(strings::Text::Resume), resumeName);
-      label(target, 24, 78, 740, resumeLabel);
-    } else {
-      label(target, 24, 78, 740, uiText(strings::Text::NoResume));
+  label(target, 24, 24, 480, uiText(strings::Text::Title));
+  target.line({24, 60}, {504, 60}, 1, ui::Paint::solid(ui::Color::Black));
+  if (!cardReady) label(target, 28, 118, 472, uiText(strings::Text::NoCard));
+  else {
+    const bool resumable = canResume();
+    if (!resumable && selection == ResumeItem) selection = LibraryItem;
+    constexpr int rowY[] = {112, 228, 302, 376};
+    const strings::Text names[] = {strings::Text::ContinueReading, strings::Text::Library,
+                                   strings::Text::Companion, strings::Text::Language};
+    for (size_t i = 0; i < HomeItemCount; ++i) {
+      if (selection == i) target.fill({28, static_cast<int16_t>(rowY[i] - 6), 472,
+                                      static_cast<int16_t>(i == ResumeItem ? 78 : 44)},
+                                     ui::Paint::solid(ui::Color::LightGray));
+      label(target, 40, rowY[i], 448, uiText(names[i]));
     }
-    label(target, 24, 112, 740, uiText(strings::Text::Books));
-    if (bookCount == 0) label(target, 24, 154, 740, uiText(strings::Text::NoBooks));
-    const size_t first = (selection / VISIBLE_ITEMS) * VISIBLE_ITEMS;
-    for (size_t i = first; i < bookCount && i < first + VISIBLE_ITEMS; ++i) {
-      const int y = 150 + static_cast<int>(i - first) * 40;
-      if (i == selection) target.fill({18, static_cast<int16_t>(y - 2), 750, 34},
-                                      ui::Paint::solid(ui::Color::LightGray));
-      label(target, 28, y, 720, bookNames[i]);
-    }
-    if (bookCount >= first && bookCount < first + VISIBLE_ITEMS) {
-      const int petY = bookCount == 0 ? 220 : 150 + static_cast<int>(bookCount - first) * 40;
-      if (selection == bookCount) target.fill({18, static_cast<int16_t>(petY - 2), 750, 34},
-                                               ui::Paint::solid(ui::Color::LightGray));
-      label(target, 28, petY, 720, uiText(strings::Text::Companion));
-    }
-    if (bookCount + 1 >= first && bookCount + 1 < first + VISIBLE_ITEMS) {
-      const int languageY = bookCount == 0 ? 260 : 150 + static_cast<int>(bookCount + 1 - first) * 40;
-      if (selection == bookCount + 1) target.fill({18, static_cast<int16_t>(languageY - 2), 750, 34},
-                                                   ui::Paint::solid(ui::Color::LightGray));
-      label(target, 28, languageY, 720, uiText(strings::Text::Language));
-    }
-    label(target, 12, 482, 760, uiText(strings::Text::HomeHint));
+    const char* name = strrchr(saved.path, '/');
+    smallLabel(target, 40, 150, 448, resumable ? (name ? name + 1 : saved.path)
+                                            : uiText(strings::Text::NoResume));
   }
+  drawChrome(Screen::Home);
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
+}
+
+void drawLibrary() {
+  screen = Screen::Library;
+  display.clearScreen();
+  auto target = canvas();
+  label(target, 24, 24, 480, uiText(strings::Text::Library));
+  target.line({24, 60}, {504, 60}, 1, ui::Paint::solid(ui::Color::Black));
+  smallLabel(target, 28, 82, 472, library.path());
+  if (!library.count()) {
+    label(target, 28, 160, 472, uiText(library.atRoot() ? strings::Text::NoBooks
+                                                       : strings::Text::EmptyFolder));
+  }
+  for (size_t row = 0; row < library.rows(); ++row) {
+    const auto* entry = library.row(row);
+    const int16_t y = 158 + row * 60;
+    if (library.selection() == library.first() + row) {
+      target.fill({28, static_cast<int16_t>(y - 4), 472, 42}, ui::Paint::solid(ui::Color::LightGray));
+    }
+    const auto ink = ui::Paint::solid(ui::Color::Black);
+    if (entry->directory) {
+      target.stroke({36, static_cast<int16_t>(y + 12), 20, 15}, ink, 1);
+      target.stroke({36, static_cast<int16_t>(y + 8), 9, 5}, ink, 1);
+    } else {
+      target.stroke({38, static_cast<int16_t>(y + 7), 15, 22}, ink, 1);
+      target.line({41, static_cast<int16_t>(y + 14)}, {50, static_cast<int16_t>(y + 14)}, 1, ink);
+      target.line({41, static_cast<int16_t>(y + 19)}, {50, static_cast<int16_t>(y + 19)}, 1, ink);
+    }
+    label(target, 66, y + 3, 434, entry->name);
+  }
+  if (library.count()) {
+    char range[48];
+    snprintf(range, sizeof(range), "%lu-%lu / %lu", static_cast<unsigned long>(library.first() + 1),
+             static_cast<unsigned long>(library.first() + library.rows()),
+             static_cast<unsigned long>(library.count()));
+    smallLabel(target, 24, 706, 480, range, ui::TextAlign::Center);
+  }
+  drawChrome(Screen::Library);
+  display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
+}
+
+void showLibraryError(LibraryBrowser::Status status) {
+  if (status == LibraryBrowser::Status::PathTooLong) showError(uiText(strings::Text::PathTooLong));
+  else {
+    showError(uiText(strings::Text::FolderError), true, library.path());
+    errorIsLibrary = true;
+  }
+}
+
+void openLibrary() {
+  const auto status = library.refresh(card);
+  if (status == LibraryBrowser::Status::Ok) drawLibrary();
+  else showLibraryError(status);
 }
 
 bool readState(const char* path) {
   FsFile file = card.open(path, O_RDONLY);
+  uint8_t bytes[sizeof(SavedState)];
   SavedState candidate{};
-  if (!file || file.size() != sizeof(candidate) || file.read(&candidate, sizeof(candidate)) != sizeof(candidate) ||
-      candidate.magic != STATE_MAGIC || candidate.version != STATE_VERSION ||
-      candidate.checksum != checksum(&candidate, offsetof(SavedState, checksum)) ||
-      !memchr(candidate.path, '\0', sizeof(candidate.path))) return false;
+  if (!file || file.size() > sizeof(bytes)) return false;
+  const size_t size = file.size();
+  if (file.read(bytes, size) != static_cast<int32_t>(size) ||
+      !decodeReadingState(bytes, size, &candidate)) return false;
   saved = candidate;
   return true;
 }
@@ -224,11 +285,12 @@ void saveSettings() {
 }
 
 void saveState(bool force = false) {
-  if (!cardReady || screen != Screen::Reading) return;
+  if (!cardReady || (screen != Screen::Reading && screen != Screen::ReadingSettings)) return;
   if (!force && millis() - lastStateWriteMs < 15000) return;
   saved.magic = STATE_MAGIC;
   saved.version = STATE_VERSION;
   saved.characterOffset = reader.characterOffset();
+  saved.spine = reader.spine();
   snprintf(saved.path, sizeof(saved.path), "%s", reader.path());
   saved.checksum = checksum(&saved, offsetof(SavedState, checksum));
   if (writeAtomic(card, STATE_PATH, &saved, sizeof(saved))) lastStateWriteMs = millis();
@@ -254,7 +316,7 @@ void savePet() {
 void petRenderedPage() {
   companion::PageTurnEvent event{};
   event.book_id = bookIdFor(reader.path());
-  event.page_index = reader.page();
+  event.page_index = reader.progressPage();
   event.monotonic_ms = millis();
   event.local_day = -1;
   event.local_hour = 255;
@@ -273,19 +335,24 @@ bool mountCard() {
   loadSettings();
   loadState();
   loadPet();
-  scanBooks();
+  selection = canResume() ? ResumeItem : LibraryItem;
   return true;
 }
 
 void openBook(const char* path) {
   char absolute[128];
-  if (snprintf(absolute, sizeof(absolute), "/%s", path) >= static_cast<int>(sizeof(absolute))) {
+  if (snprintf(absolute, sizeof(absolute), "%s%s", path[0] == '/' ? "" : "/", path) >= static_cast<int>(sizeof(absolute))) {
     showError(uiText(strings::Text::OpenError));
     return;
   }
   const uint32_t offset = strcmp(saved.path, absolute) == 0 ? saved.characterOffset : 0;
-  if (!reader.open(card, display, absolute, offset, display.getDisplayHeight(), display.getDisplayWidth(), textSize)) {
-    showError(uiText(strings::Text::OpenError), true, absolute);
+  const uint32_t spine = strcmp(saved.path, absolute) == 0 ? saved.spine : 0;
+  if (!reader.open(card, display, absolute, offset, display.getDisplayHeight(), display.getDisplayWidth(), textSize, spine)) {
+    const auto status = reader.status();
+    const auto key = status == freeink::book::BookStatus::Encrypted ? strings::Text::EncryptedBook
+                   : status == freeink::book::BookStatus::OutOfMemory ? strings::Text::BookTooComplex
+                   : strings::Text::OpenError;
+    showError(uiText(key), true, absolute);
     return;
   }
   pet.beginSession(millis());
@@ -316,24 +383,23 @@ void drawReadingSettings() {
   char value[96]{};
   snprintf(value, sizeof(value), "%s: %s", uiText(strings::Text::TextSize), textSizeLabel(pendingTextSize));
   label(target, 24, 158, 740, value);
-  label(target, 12, 482, 760, uiText(strings::Text::SettingsHint));
+  drawChrome(Screen::ReadingSettings);
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }
 
 bool applyTextSize() {
+  saveState(true);
   const uint32_t offset = reader.characterOffset();
+  const uint32_t spine = reader.spine();
   char path[sizeof(saved.path)]{};
   snprintf(path, sizeof(path), "%s", reader.path());
-  display.clearScreen();
-  auto target = canvas();
-  label(target, 24, 180, 740, uiText(strings::Text::Rebuilding), ui::TextAlign::Center);
-  display.displayBuffer(freeink::FreeInkDisplay::HALF_REFRESH);
   reader.close();
-  if (!reader.open(card, display, path, offset, display.getDisplayHeight(), display.getDisplayWidth(), pendingTextSize)) {
+  if (!reader.open(card, display, path, offset, display.getDisplayHeight(), display.getDisplayWidth(), pendingTextSize, spine)) {
     showError(uiText(strings::Text::OpenError), true, path);
     return false;
   }
   textSize = pendingTextSize;
+  pet.beginSession(millis());
   saveSettings();
   screen = Screen::Reading;
   if (!reader.render(display)) {
@@ -350,14 +416,18 @@ bool applyTextSize() {
 void closeBook() {
   saveState(true);
   savePet();
+  char path[sizeof(saved.path)];
+  snprintf(path, sizeof(path), "%s", reader.path());
   reader.close();
-  scanBooks();
-  drawHome();
+  const auto status = library.focusBook(card, path);
+  if (status == LibraryBrowser::Status::Ok) drawLibrary();
+  else showLibraryError(status);
 }
 
 void retryError() {
   char path[sizeof(errorPath)]{};
   snprintf(path, sizeof(path), "%s", errorPath);
+  const bool retryLibrary = errorIsLibrary;
   errorCanRetry = false;
   reader.close();
   card.shutdown();
@@ -366,7 +436,8 @@ void retryError() {
     showError(uiText(strings::Text::NoCard));
     return;
   }
-  openBook(path[0] == '/' ? path + 1 : path);
+  if (retryLibrary) openLibrary();
+  else openBook(path);
 }
 
 void drawCompanion() {
@@ -374,27 +445,28 @@ void drawCompanion() {
   display.clearScreen();
   auto target = canvas();
   label(target, 24, 24, 740, uiText(strings::Text::Companion));
-  // The checked-in 1bpp art stays in flash. drawImage reads it directly into
-  // the existing display framebuffer; no 256x256 scratch allocation is needed.
-  // Byte alignment selects FreeInkDisplay's fast 1bpp blit path on the X3.
-  const uint16_t spriteX = static_cast<uint16_t>(
-      ((display.getDisplayWidth() - dragon_art::kWidth) / 2) & ~7u);
-  display.drawImage(dragon_art::kBitmap, spriteX, 70, dragon_art::kWidth,
-                    dragon_art::kHeight, true);
+  // Use the same logical portrait coordinates as the labels. Mask1 matches
+  // the sprite's 1=white polarity and reads it directly from flash, with no
+  // rotated image allocation or second framebuffer.
+  const int16_t spriteX = (target.logicalWidth() - dragon_art::kWidth) / 2;
+  target.bitmap({spriteX, 70, dragon_art::kWidth, dragon_art::kHeight},
+                {dragon_art::kBitmap, dragon_art::kWidth, dragon_art::kHeight,
+                 ui::BitmapFormat::Mask1, true}, ui::BitmapMode::Center);
+  const int contentWidth = target.logicalWidth() - 48;
   char progress[64];
   snprintf(progress, sizeof(progress), uiText(strings::Text::PagesRead),
            static_cast<unsigned long>(pet.state().valid_pages));
-  label(target, 24, 340, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 340, contentWidth, progress, ui::TextAlign::Center);
   snprintf(progress, sizeof(progress), uiText(strings::Text::PetLevel),
            static_cast<unsigned>(companion::levelForXp(pet.state().total_xp)));
-  label(target, 24, 376, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 376, contentWidth, progress, ui::TextAlign::Center);
   snprintf(progress, sizeof(progress), uiText(strings::Text::PetXp),
            static_cast<unsigned long>(pet.state().total_xp));
-  label(target, 24, 412, 740, progress, ui::TextAlign::Center);
+  label(target, 24, 412, contentWidth, progress, ui::TextAlign::Center);
   snprintf(progress, sizeof(progress), uiText(strings::Text::SessionPages),
            static_cast<unsigned>(pet.state().session_pages));
-  label(target, 24, 448, 740, progress, ui::TextAlign::Center);
-  label(target, 24, 482, 740, uiText(strings::Text::BackHint));
+  label(target, 24, 448, contentWidth, progress, ui::TextAlign::Center);
+  drawChrome(Screen::Companion);
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }
 
@@ -413,6 +485,14 @@ void enterSleep() {
 void setup() {
   Serial.begin(115200);
   input.begin();
+  reader.setRenderCallback([] { drawChrome(Screen::Reading); });
+  reader.setBuildCallback([] {
+    display.clearScreen();
+    auto target = canvas();
+    label(target, 24, 180, 740, uiText(strings::Text::Rebuilding), ui::TextAlign::Center);
+    chrome.draw(display, {});
+    display.displayBuffer(freeink::FreeInkDisplay::HALF_REFRESH);
+  });
   freeink::applyXteinkDisplayController();
   display.setDisplayX3();
   display.begin();
@@ -436,22 +516,45 @@ void loop() {
   if (screen == Screen::Home) {
     if (!cardReady) {
       if (input.wasReleased(InputManager::BTN_CONFIRM) && mountCard()) drawHome();
-    } else if (input.wasReleased(InputManager::BTN_UP)) {
-      selection = selection == 0 ? bookCount + 1 : selection - 1;
-      drawHome();
-    } else if (input.wasReleased(InputManager::BTN_DOWN)) {
-      selection = selection >= bookCount + 1 ? 0 : selection + 1;
+    } else if (previousReleased() || nextReleased()) {
+      const bool forward = nextReleased();
+      selection = forward ? (selection + 1) % HomeItemCount
+                          : (selection + HomeItemCount - 1) % HomeItemCount;
+      if (selection == ResumeItem && !canResume()) selection = forward ? LibraryItem : LanguageItem;
       drawHome();
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
-      if (selection == bookCount + 1) {
-        language = language == strings::Language::English ? strings::Language::Russian
-                                                            : strings::Language::English;
+      if (selection == LanguageItem) {
+        language = language == strings::Language::English ? strings::Language::Russian : strings::Language::English;
         saveSettings();
         drawHome();
-      } else if (selection == bookCount) drawCompanion();
-      else openBook(bookNames[selection]);
-    } else if (input.wasReleased(InputManager::BTN_BACK) && saved.path[0] && card.exists(saved.path)) {
-      openBook(saved.path[0] == '/' ? saved.path + 1 : saved.path);
+      } else if (selection == PetItem) drawCompanion();
+      else if (selection == LibraryItem) openLibrary();
+      else if (canResume()) openBook(saved.path);
+    } else if (input.wasReleased(InputManager::BTN_BACK) && canResume()) openBook(saved.path);
+  } else if (screen == Screen::Library) {
+    if (input.wasReleased(InputManager::BTN_BACK)) {
+      if (library.atRoot()) drawHome();
+      else {
+        const auto status = library.parent(card);
+        if (status == LibraryBrowser::Status::Ok) drawLibrary();
+        else showLibraryError(status);
+      }
+    } else if (previousReleased() || nextReleased()) {
+      const auto status = library.move(card, nextReleased());
+      if (status == LibraryBrowser::Status::Ok) drawLibrary();
+      else showLibraryError(status);
+    } else if (input.wasReleased(InputManager::BTN_CONFIRM) && library.count()) {
+      const auto* entry = library.selectedEntry();
+      if (entry && entry->directory) {
+        const auto status = library.enter(card);
+        if (status == LibraryBrowser::Status::Ok) drawLibrary();
+        else showLibraryError(status);
+      } else {
+        char path[LibraryBrowser::PATH_BYTES];
+        const auto status = library.selectedPath(path, sizeof(path));
+        if (status == LibraryBrowser::Status::Ok) openBook(path);
+        else showLibraryError(status);
+      }
     }
   } else if (screen == Screen::Reading) {
     if (input.wasReleased(InputManager::BTN_BACK)) {
@@ -459,13 +562,24 @@ void loop() {
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
       pendingTextSize = textSize;
       drawReadingSettings();
-    } else if (input.wasReleased(InputManager::BTN_UP)) {
-      if (reader.previous() && !reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
+    } else if (previousReleased()) {
+      const auto move = reader.previous(display);
+      if (move == TextReader::Move::Error || (move == TextReader::Move::Moved && !reader.render(display))) {
+        saveState(true);
+        showError(uiText(strings::Text::PageError), true, reader.path());
+      }
       saveState();
-    } else if (input.wasReleased(InputManager::BTN_DOWN)) {
-      if (reader.next()) {
+    } else if (nextReleased()) {
+      const auto move = reader.next(display);
+      if (move == TextReader::Move::Error) {
+        saveState(true);
+        showError(uiText(strings::Text::PageError), true, reader.path());
+      } else if (move == TextReader::Move::Moved) {
         if (reader.render(display)) petRenderedPage();
-        else showError(uiText(strings::Text::PageError), true, reader.path());
+        else {
+          saveState(true);
+          showError(uiText(strings::Text::PageError), true, reader.path());
+        }
         saveState();
       }
     }
@@ -473,7 +587,7 @@ void loop() {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       screen = Screen::Reading;
       if (!reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
-    } else if (input.wasReleased(InputManager::BTN_UP) || input.wasReleased(InputManager::BTN_DOWN)) {
+    } else if (previousReleased() || nextReleased()) {
       pendingTextSize = pendingTextSize == TextReader::TextSize::Small ? TextReader::TextSize::Standard
                                                                         : TextReader::TextSize::Small;
       drawReadingSettings();
@@ -485,6 +599,7 @@ void loop() {
       retryError();
     } else if (input.wasReleased(InputManager::BTN_BACK)) {
       reader.close();
+      if (errorIsLibrary) library.reset();
       drawHome();
     }
   } else if (input.wasReleased(InputManager::BTN_BACK)) {

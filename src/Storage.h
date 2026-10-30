@@ -11,15 +11,20 @@ class SdBookSource final : public freeink::book::BookSource {
   void close();
   int32_t readAt(uint64_t offset, void* dst, uint32_t len) override;
   uint64_t size() const override { return length_; }
+  uint32_t revision() const { return revision_; }
 
  private:
   FsFile file_;
   uint64_t length_ = 0;
+  uint32_t revision_ = 0;
+  uint32_t lastYieldMs_ = 0;
 };
 
 class SdCache final : public freeink::book::CacheStorage {
  public:
   bool open(SDCardManager& card, uint32_t bookId);
+  void close();
+  void abortWrite();
   bool exists(const char* name) override;
   bool remove(const char* name) override;
   int64_t fileSize(const char* name) override;
@@ -36,6 +41,8 @@ class SdCache final : public freeink::book::CacheStorage {
   char final_[96]{};
   char temp_[96]{};
   FsFile output_;
+  FsFile input_;
+  char inputPath_[96]{};
 };
 
 uint32_t bookIdFor(const char* path);
