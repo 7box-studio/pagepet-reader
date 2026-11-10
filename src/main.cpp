@@ -155,28 +155,44 @@ void smallLabel(ui::DisplayTarget& target, int x, int y, int width, const char* 
   target.setFont(ui::kReaderFont);
 }
 
+void screenTitle(ui::DisplayTarget& target, const char* title) {
+  label(target, 28, 34, 472, title);
+  target.line({28, 78}, {500, 78}, 1, ui::Paint::solid(ui::Color::Black));
+}
+
+// A solid spine and outline stay legible on a one-bit panel without dithering
+// the paper underneath the text. Keep room outside for the physical side keys.
+void focusRow(ui::DisplayTarget& target, int16_t y, int16_t height) {
+  const auto ink = ui::Paint::solid(ui::Color::Black);
+  target.stroke({28, y, 472, height}, ink, 2);
+  target.fill({28, y, 6, height}, ink);
+}
+
 void drawHome() {
   screen = Screen::Home;
   if (!display.getFrameBuffer()) return;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 24, 480, uiText(strings::Text::Title));
-  target.line({24, 60}, {504, 60}, 1, ui::Paint::solid(ui::Color::Black));
-  if (!cardReady) label(target, 28, 118, 472, uiText(strings::Text::NoCard));
+  screenTitle(target, uiText(strings::Text::Title));
+  if (!cardReady) {
+    label(target, 40, 138, 448, uiText(strings::Text::NoCard));
+    smallLabel(target, 40, 184, 448, uiText(strings::Text::CardRetry));
+  }
   else {
     const bool resumable = canResume();
     if (!resumable && selection == ResumeItem) selection = LibraryItem;
-    constexpr int rowY[] = {112, 228, 302, 376};
+    constexpr int rowY[] = {126, 284, 368, 452};
     const strings::Text names[] = {strings::Text::ContinueReading, strings::Text::Library,
                                    strings::Text::Companion, strings::Text::Language};
     for (size_t i = 0; i < HomeItemCount; ++i) {
-      if (selection == i) target.fill({28, static_cast<int16_t>(rowY[i] - 6), 472,
-                                      static_cast<int16_t>(i == ResumeItem ? 78 : 44)},
-                                     ui::Paint::solid(ui::Color::LightGray));
-      label(target, 40, rowY[i], 448, uiText(names[i]));
+      if (i == ResumeItem) {
+        target.stroke({28, 110, 472, 126}, ui::Paint::solid(ui::Color::Black), 1);
+      }
+      if (selection == i) focusRow(target, rowY[i] - 16, i == ResumeItem ? 126 : 64);
+      label(target, 48, rowY[i], 432, uiText(names[i]));
     }
     const char* name = strrchr(saved.path, '/');
-    smallLabel(target, 40, 150, 448, resumable ? (name ? name + 1 : saved.path)
+    smallLabel(target, 48, 176, 432, resumable ? (name ? name + 1 : saved.path)
                                             : uiText(strings::Text::NoResume));
   }
   drawChrome(Screen::Home);
@@ -187,31 +203,39 @@ void drawLibrary() {
   screen = Screen::Library;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 24, 480, uiText(strings::Text::Library));
-  target.line({24, 60}, {504, 60}, 1, ui::Paint::solid(ui::Color::Black));
-  smallLabel(target, 28, 82, 472, library.path());
+  screenTitle(target, uiText(strings::Text::Library));
+  smallLabel(target, 28, 96, 472, library.path());
   if (!library.count()) {
-    label(target, 28, 160, 472, uiText(library.atRoot() ? strings::Text::NoBooks
-                                                       : strings::Text::EmptyFolder));
+    label(target, 40, 170, 448, uiText(strings::Text::EmptyFolder));
+    smallLabel(target, 40, 218, 448, uiText(strings::Text::AddBooks));
   }
   for (size_t row = 0; row < library.rows(); ++row) {
     const auto* entry = library.row(row);
     const int16_t y = 158 + row * 60;
     if (library.selection() == library.first() + row) {
-      target.fill({28, static_cast<int16_t>(y - 4), 472, 42}, ui::Paint::solid(ui::Color::LightGray));
+      focusRow(target, y - 4, 48);
     }
     const auto ink = ui::Paint::solid(ui::Color::Black);
     if (entry->directory) {
-      target.stroke({36, static_cast<int16_t>(y + 12), 20, 15}, ink, 1);
-      target.stroke({36, static_cast<int16_t>(y + 8), 9, 5}, ink, 1);
+      target.stroke({44, static_cast<int16_t>(y + 12), 20, 15}, ink, 1);
+      target.stroke({44, static_cast<int16_t>(y + 8), 9, 5}, ink, 1);
     } else {
-      target.stroke({38, static_cast<int16_t>(y + 7), 15, 22}, ink, 1);
-      target.line({41, static_cast<int16_t>(y + 14)}, {50, static_cast<int16_t>(y + 14)}, 1, ink);
-      target.line({41, static_cast<int16_t>(y + 19)}, {50, static_cast<int16_t>(y + 19)}, 1, ink);
+      target.stroke({46, static_cast<int16_t>(y + 7), 15, 22}, ink, 1);
+      target.line({49, static_cast<int16_t>(y + 14)}, {58, static_cast<int16_t>(y + 14)}, 1, ink);
+      target.line({49, static_cast<int16_t>(y + 19)}, {58, static_cast<int16_t>(y + 19)}, 1, ink);
     }
-    label(target, 66, y + 3, 434, entry->name);
+    label(target, 76, y + 3, 412, entry->name);
   }
   if (library.count()) {
+    // Repeat the selected name in a smaller, two-line area so long filenames
+    // can be distinguished without changing the eight-row browsing window.
+    if (const auto* entry = library.selectedEntry()) {
+      target.setFont(ui::kReaderSmallFont);
+      ui::TextStyle detail{};
+      detail.maxLines = 2;
+      target.text({40, 650, 448, 48}, entry->name, detail);
+      target.setFont(ui::kReaderFont);
+    }
     char range[48];
     snprintf(range, sizeof(range), "%lu-%lu / %lu", static_cast<unsigned long>(library.first() + 1),
              static_cast<unsigned long>(library.first() + library.rows()),
@@ -377,12 +401,25 @@ void drawReadingSettings() {
   screen = Screen::ReadingSettings;
   display.clearScreen();
   auto target = canvas();
-  label(target, 24, 24, 740, uiText(strings::Text::Settings));
-  target.line({24, 60}, {768, 60}, 1, ui::Paint::solid(ui::Color::Black));
-  label(target, 24, 112, 740, uiText(strings::Text::TextSize));
-  char value[96]{};
-  snprintf(value, sizeof(value), "%s: %s", uiText(strings::Text::TextSize), textSizeLabel(pendingTextSize));
-  label(target, 24, 158, 740, value);
+  screenTitle(target, uiText(strings::Text::Settings));
+  smallLabel(target, 40, 108, 448, uiText(strings::Text::TextSize));
+  const TextReader::TextSize sizes[] = {TextReader::TextSize::Small, TextReader::TextSize::Standard};
+  for (size_t i = 0; i < 2; ++i) {
+    const int16_t y = 154 + i * 76;
+    if (pendingTextSize == sizes[i]) focusRow(target, y, 64);
+    label(target, 48, y + 16, 300, textSizeLabel(sizes[i]));
+    if (textSize == sizes[i]) {
+      smallLabel(target, 348, y + 19, 132, uiText(strings::Text::CurrentSize), ui::TextAlign::Right);
+    }
+  }
+  smallLabel(target, 40, 338, 448, uiText(strings::Text::Preview));
+  target.line({40, 378}, {488, 378}, 1, ui::Paint::solid(ui::Color::Black));
+  target.setFont(pendingTextSize == TextReader::TextSize::Small ? ui::kReaderSmallFont : ui::kReaderFont);
+  ui::TextStyle preview{};
+  preview.maxLines = 6;
+  target.text({40, 402, 448, 200}, uiText(strings::Text::PreviewPassage), preview);
+  target.setFont(ui::kReaderFont);
+  smallLabel(target, 40, 664, 448, uiText(strings::Text::PositionKept));
   drawChrome(Screen::ReadingSettings);
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }

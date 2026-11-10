@@ -47,6 +47,12 @@ enum class Text : uint8_t {
   PathTooLong,
   HintParent,
   HintOpen,
+  CurrentSize,
+  Preview,
+  PreviewPassage,
+  PositionKept,
+  AddBooks,
+  CardRetry,
   Count,
 };
 
@@ -62,6 +68,11 @@ inline const char* tr(Text key, Language language) {
       "Read", "Apply", "Home", "Retry",
       "Library", "Continue reading", "No books in this folder", "Could not read this folder",
       "This path is too long", "Up folder", "Open",
+      "Current", "Text preview",
+      "The book lay open by the window. Outside, the trees moved in the wind. "
+      "There was time for one more page.",
+      "Your reading position will be kept.", "Add TXT or EPUB files here.",
+      "Then press Retry.",
   };
   static constexpr const char* RU[] = {
       "PagePet Reader", "Книги", "Вставьте карту microSD", "Добавьте .txt или .epub на карту",
@@ -74,6 +85,11 @@ inline const char* tr(Text key, Language language) {
       "Читать", "Принять", "Домой", "Повтор",
       "Библиотека", "Продолжить чтение", "В папке нет книг", "Не удалось прочитать папку",
       "Слишком длинный путь", "Выше", "Открыть",
+      "Сейчас", "Образец текста",
+      "Книга лежала у окна. За стеклом ветер тихо шевелил ветви деревьев. "
+      "Можно было прочитать ещё одну страницу.",
+      "Место в книге сохранится.", "Добавьте сюда файлы TXT или EPUB.",
+      "Затем нажмите «Повтор».",
   };
   static_assert(sizeof(EN) / sizeof(EN[0]) == static_cast<unsigned>(Text::Count));
   static_assert(sizeof(RU) / sizeof(RU[0]) == static_cast<unsigned>(Text::Count));
