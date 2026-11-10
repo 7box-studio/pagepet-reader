@@ -18,7 +18,7 @@ This is an early development build. It currently provides:
 - Saved reading position and a visible Resume row for the last book.
 - A separate folder-based library, PagePet screen, and English/Russian interface switch, all operated by buttons.
 - A monochrome dragon on the optional PagePet screen, drawn from an 8 KB flash-resident sprite without an extra image buffer.
-- Two text sizes from the reading screen; the current position is retained when pages are rebuilt.
+- Two text sizes with a preview before applying; the current position is retained when pages are rebuilt.
 - Sleep through the power button.
 - Battery icon, percentage and charging marker on every screen, including reading. The X3 gauge is sampled at most every 30 seconds when drawing; no timer refreshes the e-ink just to update battery text. Failed reads keep the last good percentage; before the first good sample, the label is `--%`.
 - Contextual front-button labels in four bottom boxes and edge-button hints, following Crosspoint's X3 layout.
@@ -29,6 +29,18 @@ The interface defaults to **English**. To switch to Russian, select **Language: 
 Hardware reading, sleep, recovery, and both known X3 display-controller variants still need device validation. Native EPUB support is experimental; device performance measurements are pending. This build is not a stable daily-use release. See the [development priorities](docs/ROADMAP.md).
 
 The measurement procedure for future hardware runs is in the [X3 benchmark checklist](docs/X3-BENCHMARK.md).
+
+## Interface
+
+Home gives the last book its own reading card. A solid outline and black spine mark the selected row on the monochrome screen. Library repeats the selected filename in a smaller two-line area to help distinguish long titles. Reading settings show both sizes, mark the current one, and preview the selected size before applying it. Back cancels the selection and returns to reading.
+
+<p align="center">
+  <img src="docs/screenshots/home-en.png" alt="Home with Continue reading selected" width="160">
+  <img src="docs/screenshots/library-en.png" alt="Library with a long selected filename shown below the list" width="160">
+  <img src="docs/screenshots/settings-en.png" alt="Reading settings with size choices and text preview" width="160">
+</p>
+
+Screenshots show the actual 528×792 framebuffer from the desktop simulator with sample books; physical e-ink appearance still needs device validation.
 
 ## Button controls
 
