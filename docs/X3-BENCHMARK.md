@@ -13,12 +13,18 @@ Record the board identifier, firmware commit, card model, card filesystem, and b
 
 ## Book fixtures
 
-Keep the fixture set on the card outside the firmware repository:
+Generate a card archive with Python 3 from the repository root, then extract its `Books` directory into the microSD root.
+
+```sh
+python3 tools/make_x3_benchmark_card.py /tmp/pagepet-x3-benchmark.zip
+```
+
+The archive contains:
 
 1. UTF-8 plain text, 100–300 KB.
 2. UTF-8 plain text, 1–5 MB.
-3. A long book with enough pages to test a jump near the end.
-4. A representative DRM-free EPUB with several chapters, plus a large single-chapter EPUB and an illustrated EPUB.
+3. An EPUB with eleven contents entries, nested sections, a long footnote in a separate XHTML file and a broken footnote link. Use section 10 for the near-end jump.
+4. Compressed and stored variants of the same DRM-free EPUB, a large single-chapter EPUB and an illustrated EPUB. Include representative books from the reader’s own collection in the hardware run.
 
 Use the same files for cold and warm runs. Remove only the relevant directory under `/.pagepet/cache/` for a cold run; keep it for a warm run.
 
