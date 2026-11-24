@@ -1,4 +1,6 @@
 #include "TextReader.h"
+
+#include <epub/PackageParsers.h>
 #include "BookFormat.h"
 
 #include <Arduino.h>
@@ -149,7 +151,7 @@ bool TextReader::readIndex() {
   return status_ == BookStatus::Ok && !cacheReader_.isPartial();
 }
 
-bool TextReader::prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter) {
+bool TextReader::prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter, const char* noteHref) {
   if (readIndex()) return true;
   cacheReader_ = PageCacheReader{};
   indexArena_.init(nullptr, 0);
@@ -174,12 +176,18 @@ bool TextReader::prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter
     if (epub_) {
       ZipEntry entry;
       char href[512];
-      status_ = catalog_.spineEntry(chapter, &entry);
-      if (status_ == BookStatus::Ok) status_ = catalog_.spineHref(chapter, href, sizeof(href));
+      if (noteHref) {
+        const auto* found = catalog_.zip().find(noteHref);
+        status_ = found ? BookStatus::Ok : BookStatus::NotFound;
+        if (found) entry = *found;
+      } else {
+        status_ = catalog_.spineEntry(chapter, &entry);
+        if (status_ == BookStatus::Ok) status_ = catalog_.spineHref(chapter, href, sizeof(href));
+      }
       if (status_ == BookStatus::Ok) {
         Arena parse(buildMemory.get() + LAYOUT_BYTES, BUILD_BYTES - LAYOUT_BYTES);
         ChapterLayoutSession session;
-        status_ = session.begin(source_, &catalog_.zip(), source_, entry, href, layout_, buildArena, sink, &parse);
+        status_ = session.begin(source_, &catalog_.zip(), source_, entry, noteHref ? noteHref : href, layout_, buildArena, sink, &parse);
         while (status_ == BookStatus::Ok && !session.done()) {
           status_ = session.step(4);
           delay(1);
@@ -203,19 +211,25 @@ bool TextReader::prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter
   return readIndex();
 }
 
-bool TextReader::openChapter(freeink::FreeInkDisplay& display, uint32_t chapter, uint32_t character) {
+bool TextReader::openChapter(freeink::FreeInkDisplay& display, uint32_t chapter, uint32_t character,
+                             const char* noteHref) {
   // Build memory and reading memory never coexist. Keep the logical position
   // intact until the new chapter has opened, so an SD failure saves the old one.
+  noteCount_ = 0;
   cacheReader_ = PageCacheReader{};
   indexArena_.init(nullptr, 0);
   pageArena_.init(nullptr, 0);
   indexMemory_.reset();
   pageMemory_.reset();
-  if (!pageCacheName(chapter, generation_, cacheName_, sizeof(cacheName_))) {
+  if (noteHref) {
+    snprintf(cacheName_, sizeof(cacheName_), "n%08lx-%08lx.fibp",
+             static_cast<unsigned long>(ZipCatalog::hashPath(noteHref)),
+             static_cast<unsigned long>(generation_));
+  } else if (!pageCacheName(chapter, generation_, cacheName_, sizeof(cacheName_))) {
     status_ = BookStatus::Unsupported;
     return false;
   }
-  if (!prepareCache(display, chapter)) return false;
+  if (!prepareCache(display, chapter, noteHref)) return false;
   pageMemory_.reset(new (std::nothrow) uint8_t[PAGE_BYTES]);
   if (!pageMemory_) { status_ = BookStatus::OutOfMemory; return false; }
   pageArena_.init(pageMemory_.get(), PAGE_BYTES);
@@ -252,8 +266,12 @@ TextReader::Move TextReader::next(freeink::FreeInkDisplay& display) {
   buildShown_ = false;
   Move result = Move::Moved;
   if (page_ + 1 < pageCount()) ++page_;
+  else if (inNote_) return Move::End;
   else result = moveChapter(display, true);
-  if (result == Move::Moved) { character_ = cacheReader_.charStart(page_); ++progressPage_; }
+  if (result == Move::Moved) {
+    character_ = cacheReader_.charStart(page_);
+    if (!inNote_) ++progressPage_;
+  }
   if (result == Move::End && buildShown_ && !render(display)) return Move::Error;
   return result;
 }
@@ -261,18 +279,113 @@ TextReader::Move TextReader::next(freeink::FreeInkDisplay& display) {
 TextReader::Move TextReader::previous(freeink::FreeInkDisplay& display) {
   buildShown_ = false;
   Move result = Move::Moved;
+  if (inNote_ && page_ == noteFirstPage_) return Move::End;
   if (page_ > 0) --page_;
   else result = moveChapter(display, false);
-  if (result == Move::Moved) { character_ = cacheReader_.charStart(page_); --progressPage_; }
+  if (result == Move::Moved) {
+    character_ = cacheReader_.charStart(page_);
+    if (!inNote_) --progressPage_;
+  }
   if (result == Move::End && buildShown_ && !render(display)) return Move::Error;
   return result;
 }
 
-bool TextReader::render(freeink::FreeInkDisplay& display) {
-  if (!display.getFrameBuffer()) return false;
-  const uint32_t start = millis();
+void TextReader::collectNotes(const Page& page) {
+  if (!epub_ || inNote_) return;
+  for (size_t i = 0; i < page.linkCount && noteCount_ < sizeof(notes_) / sizeof(notes_[0]); ++i) {
+    const auto& link = page.links[i];
+    if (!link.fragment[0]) continue;
+    bool duplicate = false;
+    for (size_t n = 0; n < noteCount_; ++n) {
+      const auto& existing = *notes_[n].link;
+      if (strcmp(existing.target, link.target) == 0 && strcmp(existing.fragment, link.fragment) == 0) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) continue;
+    for (size_t r = 0; r < page.runCount; ++r) {
+      const auto& run = page.runs[r];
+      if ((run.styleFlags & StyleSuperscript) && run.x == link.x &&
+          run.baselineY == link.y + run.sizePx) {
+        notes_[noteCount_++] = {&link, &run};
+        break;
+      }
+    }
+  }
+}
+
+void TextReader::noteLabel(size_t index, char* label, size_t capacity) const {
+  if (!capacity) return;
+  label[0] = '\0';
+  if (index >= noteCount_) return;
+  const auto& marker = *notes_[index].marker;
+  size_t length = marker.len < capacity - 1 ? marker.len : capacity - 1;
+  while (length < marker.len && (static_cast<uint8_t>(marker.text[length]) & 0xc0) == 0x80) --length;
+  memcpy(label, marker.text, length);
+  label[length] = '\0';
+}
+
+TextReader::NoteResult TextReader::openNote(freeink::FreeInkDisplay& display, size_t index) {
+  if (inNote_ || index >= noteCount_) return NoteResult::Missing;
+  const auto& link = *notes_[index].link;
+  const uint32_t anchor = ZipCatalog::hashPath(link.fragment);
+  int chapter = link.target[0] ? catalog_.spineIndexForHref(link.target) : static_cast<int>(spine_);
+  char href[160]{};
+  if (chapter < 0 && !catalog_.zip().find(link.target)) {
+    // The SDK can store a fragment-only link as the source directory.
+    char sourceHref[512], directory[512];
+    status_ = catalog_.spineHref(spine_, sourceHref, sizeof(sourceHref));
+    if (status_ != BookStatus::Ok) return NoteResult::Error;
+    if (!dirName(sourceHref, directory, sizeof(directory)) || strcmp(link.target, directory) != 0) {
+      return NoteResult::Missing;
+    }
+    chapter = static_cast<int>(spine_);
+  }
+  if (chapter < 0 &&
+      snprintf(href, sizeof(href), "%s", link.target) >= static_cast<int>(sizeof(href))) {
+    return NoteResult::Missing;
+  }
+  returnSpine_ = spine_;
+  returnCharacter_ = character_;
+  returnPage_ = page_;
+  const bool changeChapter = chapter != static_cast<int>(spine_);
+  if (changeChapter &&
+      !openChapter(display, chapter < 0 ? spine_ : static_cast<uint32_t>(chapter), 0,
+                   chapter < 0 ? href : nullptr)) return NoteResult::Error;
+  uint32_t offset = 0;
+  if (!cacheReader_.pageCount() || !cacheReader_.charForAnchor(anchor, &offset)) {
+    if (changeChapter) {
+      Page source{};
+      if (!restoreNoteSource(display) || !readPage(source)) return NoteResult::Error;
+      collectNotes(source);
+    }
+    return NoteResult::Missing;
+  }
+  page_ = cacheReader_.pageForChar(offset);
+  character_ = cacheReader_.charStart(page_);
+  noteFirstPage_ = page_;
+  inNote_ = true;
+  return NoteResult::Opened;
+}
+
+bool TextReader::returnFromNote(freeink::FreeInkDisplay& display) {
+  if (!inNote_) return false;
+  inNote_ = false;
+  return restoreNoteSource(display);
+}
+
+bool TextReader::restoreNoteSource(freeink::FreeInkDisplay& display) {
+  if (!openChapter(display, returnSpine_, returnCharacter_)) return false;
+  if (returnPage_ < pageCount() && cacheReader_.charStart(returnPage_) == returnCharacter_) {
+    page_ = returnPage_;
+  }
+  return true;
+}
+
+bool TextReader::readPage(Page& page) {
+  noteCount_ = 0;
   pageArena_.reset();
-  Page page{};
   status_ = cacheReader_.readPage(page_, pageArena_, &page);
   if (status_ != BookStatus::Ok) {
     // A valid footer can still surround a damaged page blob. Retrying must
@@ -280,6 +393,14 @@ bool TextReader::render(freeink::FreeInkDisplay& display) {
     if (status_ == BookStatus::Stale) cache_.remove(cacheName_);
     return false;
   }
+  return true;
+}
+
+bool TextReader::render(freeink::FreeInkDisplay& display) {
+  if (!display.getFrameBuffer()) return false;
+  const uint32_t start = millis();
+  Page page{};
+  if (!readPage(page)) return false;
   display.clearScreen();
   FrameTarget target{display.getFrameBuffer(), static_cast<int16_t>(display.getDisplayWidth()),
                      static_cast<int16_t>(display.getDisplayHeight()),
@@ -301,6 +422,7 @@ bool TextReader::render(freeink::FreeInkDisplay& display) {
     }
     if (imageStatus != BookStatus::Ok) Serial.printf("[reader] image skipped: %s\n", bookStatusName(imageStatus));
   }
+  collectNotes(page);
   if (renderCallback_) renderCallback_();
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
   Serial.printf("[reader] chapter %lu/%lu page %lu/%lu render=%lums free=%u largest=%u\n",
@@ -326,4 +448,6 @@ void TextReader::close() {
   path_[0] = '\0';
   page_ = spine_ = character_ = progressPage_ = 0;
   epub_ = false;
+  inNote_ = false;
+  noteCount_ = 0;
 }

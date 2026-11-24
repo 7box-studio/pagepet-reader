@@ -24,7 +24,7 @@ Done when a reader can return to the book with buttons after card removal, inter
 
 ## 4. EPUB and book import
 
-Experimental native EPUB reading now uses an SD-backed catalog and lazy per-chapter page caches. Chapter/character positions survive relayout, links and anchors remain cached, and ordinary text turns skip decompression and parsing. Footnote navigation and a TOC screen remain pending.
+Experimental native EPUB reading now uses an SD-backed catalog and lazy per-chapter page caches. Chapter/character positions survive relayout, links and anchors remain cached, and ordinary text turns skip decompression and parsing. Button navigation to superscript footnotes is implemented. A TOC screen remains pending.
 
 Measure first open, cached reopen, page turns, chapter-boundary turns, a jump near the end, free heap, largest free block, and cache size on a physical X3 with representative books. Use the results to validate the native path or choose conversion during transfer if needed. Keep import controls out of the main reading path.
 
@@ -32,9 +32,7 @@ Done when the selected approach preserves ordinary page-turn responsiveness and 
 
 ### EPUB footnotes and endnotes
 
-For the next EPUB increment, use the preserved links from superscript note markers to their note text. On the button-only X3, Confirm opens the current page's link list; Up/Down selects a note, Confirm opens it, and Back returns to the exact reading position. A single link may open directly. Long notes must remain readable across pages. Viewing a note must not award PagePet reading progress.
-
-This requires resolving the marker's `href` and fragment, navigating within or across EPUB files, and retaining the source position independently of the note position. FreeInkBook already lays out superscripts and stores page links and anchors; PagePet Reader still needs the button navigation and return state. Test same-file and separate-file notes, multiple notes on one page, long notes, broken targets, and sleep/wake while a note is open. Do not overwrite the saved book position with the note position.
+Confirm opens the current page’s note list, and Back returns from a note to the source page. The simulator covers same-file and separate-file notes, multiple notes, pagination, missing targets, and resume after sleep. Verify these scenarios on the X3.
 
 ## PagePet rule
 

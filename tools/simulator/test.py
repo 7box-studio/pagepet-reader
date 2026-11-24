@@ -4,9 +4,70 @@ from pathlib import Path
 import re
 import os
 import tempfile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from client import Backend, save_png
 from demo import ensure_demo
+
+
+def test_footnotes(binary):
+    with tempfile.TemporaryDirectory(prefix="pagepet-footnotes-") as folder:
+        card = Path(folder)
+        with ZipFile(card / "notes.epub", "w", compression=ZIP_DEFLATED) as archive:
+            archive.writestr("mimetype", "application/epub+zip", compress_type=ZIP_STORED)
+            archive.writestr("META-INF/container.xml",
+                             '<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>')
+            archive.writestr("OPS/book.opf", '<package version="3.0"><metadata/>'
+                             '<manifest><item id="main" href="main.xhtml" media-type="application/xhtml+xml"/>'
+                             '<item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>'
+                             '</manifest><spine><itemref idref="main"/></spine></package>')
+            archive.writestr("OPS/main.xhtml", '<html><body><p>Read this '
+                             '<a href="#local"><sup>1</sup></a> '
+                             '<sup><a href="notes.xhtml#remote">2</a></sup> '
+                             '<a href="notes.xhtml#absent"><sup>3</sup></a></p>'
+                             + '<p>Body text and more words.</p>' * 85
+                             + '<p id="local">The local footnote.</p></body></html>')
+            archive.writestr("OPS/notes.xhtml", '<html><body><p id="remote">The long footnote.</p>'
+                             + '<p>This explanation spans more than one page.</p>' * 90 + '</body></html>')
+
+        backend = Backend(binary, card)
+        try:
+            backend.ready()
+
+            def key(command):
+                backend.send(command)
+                return backend.ready()[0]
+
+            key("ok")
+            source = key("ok")
+            assert source["screen"] == "reading"
+            assert key("ok")["screen"] == "notes"
+            assert key("down")["screen"] == "notes"
+            key("down")
+            assert key("ok")["screen"] == "notes"  # missing anchor in another document
+            key("up")
+            remote = key("ok")
+            assert remote["screen"] == "note" and remote["pages"] > 1
+            assert key("up")["page"] == remote["page"]
+            key("advance")
+            turned = key("down")
+            assert turned["page"] == remote["page"] + 1 and turned["petPages"] == source["petPages"]
+            restored = key("back")
+            assert restored["screen"] == "reading"
+            assert (restored["page"], restored["character"]) == (source["page"], source["character"])
+            key("ok")
+            local = key("ok")
+            assert local["screen"] == "note" and local["page"] > source["page"], local
+            assert key("power")["sleeping"]
+            key("power")
+            restored = key("back")
+            assert restored["screen"] == "reading" and restored["character"] == source["character"]
+            key("ok")
+            for _ in range(3):
+                key("down")
+            assert key("ok")["screen"] == "settings"
+        finally:
+            backend.close()
 
 
 def main():
@@ -144,7 +205,8 @@ def main():
             assert state["screen"] == "companion"  # empty library is navigable
         finally:
             backend.close()
-    print("Simulator application checks passed: front/side buttons, battery/charging/failures, EPUB/TXT, settings, resume, sleep, SD retry and PagePet.")
+    test_footnotes(binary)
+    print("Simulator application checks passed: EPUB footnotes, front/side buttons, battery/charging/failures, EPUB/TXT, settings, resume, sleep, SD retry and PagePet.")
 
 
 if __name__ == "__main__":

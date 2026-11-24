@@ -60,7 +60,7 @@ ReaderChrome chrome;
 LibraryBrowser library;
 companion::CompanionEngine pet;
 
-enum class Screen : uint8_t { Home, Library, Reading, ReadingSettings, Companion, Error };
+enum class Screen : uint8_t { Home, Library, Reading, ReadingSettings, Notes, Note, Companion, Error };
 Screen screen = Screen::Home;
 bool cardReady = false;
 size_t selection = LibraryItem;
@@ -74,6 +74,7 @@ char errorText[64]{};
 char errorPath[sizeof(saved.path)]{};
 bool errorCanRetry = false;
 bool errorIsLibrary = false;
+size_t noteSelection = 0;
 
 const char* uiText(strings::Text key) { return strings::tr(key, language); }
 
@@ -117,8 +118,15 @@ void drawChrome(Screen view) {
              library.count() ? uiText(strings::Text::HintUp) : "",
              library.count() ? uiText(strings::Text::HintDown) : "", library.count() > 0};
   } else if (view == Screen::Reading) {
-    hints = {uiText(strings::Text::HintBooks), uiText(strings::Text::HintText),
+    hints = {uiText(strings::Text::HintBooks),
+             uiText(reader.noteCount() ? strings::Text::Notes : strings::Text::HintText),
              uiText(strings::Text::HintPrevious), uiText(strings::Text::HintNext), true};
+  } else if (view == Screen::Notes) {
+    hints = {uiText(strings::Text::HintRead), uiText(strings::Text::HintOpen),
+             uiText(strings::Text::HintUp), uiText(strings::Text::HintDown), true};
+  } else if (view == Screen::Note) {
+    hints = {uiText(strings::Text::HintRead), "", uiText(strings::Text::HintPrevious),
+             uiText(strings::Text::HintNext), true};
   } else if (view == Screen::ReadingSettings) {
     hints = {uiText(strings::Text::HintRead), uiText(strings::Text::HintApply),
              uiText(strings::Text::HintUp), uiText(strings::Text::HintDown), true};
@@ -309,7 +317,7 @@ void saveSettings() {
 }
 
 void saveState(bool force = false) {
-  if (!cardReady || (screen != Screen::Reading && screen != Screen::ReadingSettings)) return;
+  if (!cardReady || (screen != Screen::Reading && screen != Screen::ReadingSettings && screen != Screen::Notes)) return;
   if (!force && millis() - lastStateWriteMs < 15000) return;
   saved.magic = STATE_MAGIC;
   saved.version = STATE_VERSION;
@@ -395,6 +403,29 @@ void openBook(const char* path) {
 const char* textSizeLabel(TextReader::TextSize value) {
   return uiText(value == TextReader::TextSize::Small ? strings::Text::TextSizeSmall
                                                      : strings::Text::TextSizeStandard);
+}
+
+void drawNotes(bool missing = false) {
+  screen = Screen::Notes;
+  display.clearScreen();
+  auto target = canvas();
+  screenTitle(target, uiText(strings::Text::Notes));
+  constexpr size_t visible = 8;
+  const size_t first = (noteSelection / visible) * visible;
+  for (size_t i = first; i < first + visible && i <= reader.noteCount(); ++i) {
+    const int16_t y = 108 + (i - first) * 64;
+    if (i == noteSelection) focusRow(target, y, 56);
+    char marker[64];
+    if (i < reader.noteCount()) reader.noteLabel(i, marker, sizeof(marker));
+    label(target, 48, y + 12, 420, i == reader.noteCount() ? uiText(strings::Text::Settings) : marker);
+  }
+  if (missing) label(target, 48, 650, 420, uiText(strings::Text::NoteMissing));
+  drawChrome(Screen::Notes);
+  display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
+}
+
+void renderReadingPage() {
+  if (!reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
 }
 
 void drawReadingSettings() {
@@ -508,7 +539,7 @@ void drawCompanion() {
 }
 
 void enterSleep() {
-  if (screen == Screen::Reading || screen == Screen::ReadingSettings) saveState(true);
+  saveState(true);
   savePet();
   reader.close();
   display.deepSleep();
@@ -522,7 +553,7 @@ void enterSleep() {
 void setup() {
   Serial.begin(115200);
   input.begin();
-  reader.setRenderCallback([] { drawChrome(Screen::Reading); });
+  reader.setRenderCallback([] { drawChrome(screen); });
   reader.setBuildCallback([] {
     display.clearScreen();
     auto target = canvas();
@@ -597,8 +628,13 @@ void loop() {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       closeBook();
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
-      pendingTextSize = textSize;
-      drawReadingSettings();
+      if (reader.noteCount()) {
+        noteSelection = 0;
+        drawNotes();
+      } else {
+        pendingTextSize = textSize;
+        drawReadingSettings();
+      }
     } else if (previousReleased()) {
       const auto move = reader.previous(display);
       if (move == TextReader::Move::Error || (move == TextReader::Move::Moved && !reader.render(display))) {
@@ -620,10 +656,48 @@ void loop() {
         saveState();
       }
     }
+  } else if (screen == Screen::Notes) {
+    if (input.wasReleased(InputManager::BTN_BACK)) {
+      screen = Screen::Reading;
+      renderReadingPage();
+    } else if (previousReleased() && noteSelection > 0) {
+      --noteSelection;
+      drawNotes();
+    } else if (nextReleased() && noteSelection < reader.noteCount()) {
+      ++noteSelection;
+      drawNotes();
+    } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
+      if (noteSelection == reader.noteCount()) {
+        pendingTextSize = textSize;
+        drawReadingSettings();
+      } else {
+        saveState(true);
+        const auto result = reader.openNote(display, noteSelection);
+        if (result == TextReader::NoteResult::Opened) {
+          screen = Screen::Note;
+          renderReadingPage();
+        } else if (result == TextReader::NoteResult::Missing) {
+          if (noteSelection >= reader.noteCount()) noteSelection = 0;
+          drawNotes(true);
+        } else {
+          showError(uiText(strings::Text::PageError), true, reader.path());
+        }
+      }
+    }
+  } else if (screen == Screen::Note) {
+    if (input.wasReleased(InputManager::BTN_BACK)) {
+      screen = Screen::Reading;
+      if (reader.returnFromNote(display)) renderReadingPage();
+      else showError(uiText(strings::Text::PageError), true, reader.path());
+    } else if (previousReleased() || nextReleased()) {
+      const auto move = nextReleased() ? reader.next(display) : reader.previous(display);
+      if (move == TextReader::Move::Moved) renderReadingPage();
+      else if (move == TextReader::Move::Error) showError(uiText(strings::Text::PageError), true, reader.path());
+    }
   } else if (screen == Screen::ReadingSettings) {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       screen = Screen::Reading;
-      if (!reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
+      renderReadingPage();
     } else if (previousReleased() || nextReleased()) {
       pendingTextSize = pendingTextSize == TextReader::TextSize::Small ? TextReader::TextSize::Standard
                                                                         : TextReader::TextSize::Small;

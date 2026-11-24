@@ -30,6 +30,8 @@ const char* screenName() {
     case Screen::Home: return "home";
     case Screen::Library: return "library";
     case Screen::Reading: return "reading";
+    case Screen::Notes: return "notes";
+    case Screen::Note: return "note";
     case Screen::ReadingSettings: return "settings";
     case Screen::Companion: return "companion";
     case Screen::Error: return "error";

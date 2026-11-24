@@ -17,6 +17,11 @@ class TextReader {
  public:
   enum class TextSize : uint8_t { Small = 0, Standard = 1 };
   enum class Move : uint8_t { Moved, End, Error };
+  enum class NoteResult : uint8_t { Opened, Missing, Error };
+  size_t noteCount() const { return noteCount_; }
+  void noteLabel(size_t index, char* label, size_t capacity) const;
+  NoteResult openNote(freeink::FreeInkDisplay& display, size_t index);
+  bool returnFromNote(freeink::FreeInkDisplay& display);
   void setBuildCallback(void (*callback)()) { buildCallback_ = callback; }
   void setRenderCallback(void (*callback)()) { renderCallback_ = callback; }
 
@@ -46,8 +51,12 @@ class TextReader {
   static constexpr size_t IMAGE_BYTES = 96 * 1024;
   bool prepareCatalog(freeink::FreeInkDisplay& display);
   bool loadCatalog();
-  bool prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter);
-  bool openChapter(freeink::FreeInkDisplay& display, uint32_t spine, uint32_t character);
+  bool prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter, const char* noteHref);
+  bool openChapter(freeink::FreeInkDisplay& display, uint32_t spine, uint32_t character,
+                   const char* noteHref = nullptr);
+  bool restoreNoteSource(freeink::FreeInkDisplay& display);
+  bool readPage(freeink::book::Page& page);
+  void collectNotes(const freeink::book::Page& page);
   Move moveChapter(freeink::FreeInkDisplay& display, bool forward);
   bool readIndex();
   void notifyBuild();
@@ -73,6 +82,17 @@ class TextReader {
   uint32_t spine_ = 0;
   uint32_t character_ = 0;
   uint32_t progressPage_ = 0;
+  struct NoteLink {
+    const freeink::book::PageLink* link;
+    const freeink::book::PageTextRun* marker;
+  };
+  NoteLink notes_[16]{};
+  size_t noteCount_ = 0;
+  uint32_t returnSpine_ = 0;
+  uint32_t returnPage_ = 0;
+  uint32_t returnCharacter_ = 0;
+  uint32_t noteFirstPage_ = 0;
+  bool inNote_ = false;
   bool epub_ = false;
   bool buildShown_ = false;
   void (*buildCallback_)() = nullptr;
