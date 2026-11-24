@@ -24,7 +24,7 @@ Done when a reader can return to the book with buttons after card removal, inter
 
 ## 4. EPUB and book import
 
-Experimental native EPUB reading now uses an SD-backed catalog and lazy per-chapter page caches. Chapter/character positions survive relayout, links and anchors remain cached, and ordinary text turns skip decompression and parsing. Button navigation to superscript footnotes is implemented. A TOC screen remains pending.
+Experimental native EPUB reading now uses an SD-backed catalog and lazy per-chapter page caches. Chapter/character positions survive relayout, links and anchors remain cached, and ordinary text turns skip decompression and parsing. Button navigation to superscript footnotes is implemented. The reading menu opens the book’s table of contents and saves the new reading position after a successful jump. Verify the jump on the physical X3.
 
 Measure first open, cached reopen, page turns, chapter-boundary turns, a jump near the end, free heap, largest free block, and cache size on a physical X3 with representative books. Use the results to validate the native path or choose conversion during transfer if needed. Keep import controls out of the main reading path.
 

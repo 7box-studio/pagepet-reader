@@ -60,7 +60,7 @@ ReaderChrome chrome;
 LibraryBrowser library;
 companion::CompanionEngine pet;
 
-enum class Screen : uint8_t { Home, Library, Reading, ReadingSettings, Notes, Note, Companion, Error };
+enum class Screen : uint8_t { Home, Library, Reading, ReadingSettings, ReadingMenu, Contents, Note, Companion, Error };
 Screen screen = Screen::Home;
 bool cardReady = false;
 size_t selection = LibraryItem;
@@ -74,7 +74,8 @@ char errorText[64]{};
 char errorPath[sizeof(saved.path)]{};
 bool errorCanRetry = false;
 bool errorIsLibrary = false;
-size_t noteSelection = 0;
+size_t readingMenuSelection = 0;
+size_t contentsSelection = 0;
 
 const char* uiText(strings::Text key) { return strings::tr(key, language); }
 
@@ -119,9 +120,10 @@ void drawChrome(Screen view) {
              library.count() ? uiText(strings::Text::HintDown) : "", library.count() > 0};
   } else if (view == Screen::Reading) {
     hints = {uiText(strings::Text::HintBooks),
-             uiText(reader.noteCount() ? strings::Text::Notes : strings::Text::HintText),
+             uiText(reader.noteCount() ? strings::Text::Notes :
+                    reader.contentsCount() ? strings::Text::HintMenu : strings::Text::HintText),
              uiText(strings::Text::HintPrevious), uiText(strings::Text::HintNext), true};
-  } else if (view == Screen::Notes) {
+  } else if (view == Screen::ReadingMenu || view == Screen::Contents) {
     hints = {uiText(strings::Text::HintRead), uiText(strings::Text::HintOpen),
              uiText(strings::Text::HintUp), uiText(strings::Text::HintDown), true};
   } else if (view == Screen::Note) {
@@ -317,7 +319,8 @@ void saveSettings() {
 }
 
 void saveState(bool force = false) {
-  if (!cardReady || (screen != Screen::Reading && screen != Screen::ReadingSettings && screen != Screen::Notes)) return;
+  if (!cardReady || (screen != Screen::Reading && screen != Screen::ReadingSettings && screen != Screen::ReadingMenu &&
+                     screen != Screen::Contents)) return;
   if (!force && millis() - lastStateWriteMs < 15000) return;
   saved.magic = STATE_MAGIC;
   saved.version = STATE_VERSION;
@@ -405,27 +408,63 @@ const char* textSizeLabel(TextReader::TextSize value) {
                                                      : strings::Text::TextSizeStandard);
 }
 
-void drawNotes(bool missing = false) {
-  screen = Screen::Notes;
+size_t readingSettingsRow() {
+  return reader.noteCount() + (reader.contentsCount() ? 1 : 0);
+}
+
+void drawReadingMenu(bool missing = false) {
+  screen = Screen::ReadingMenu;
   display.clearScreen();
   auto target = canvas();
-  screenTitle(target, uiText(strings::Text::Notes));
+  screenTitle(target, uiText(reader.noteCount() ? strings::Text::Notes : strings::Text::ReadingMenu));
   constexpr size_t visible = 8;
-  const size_t first = (noteSelection / visible) * visible;
-  for (size_t i = first; i < first + visible && i <= reader.noteCount(); ++i) {
+  const size_t first = (readingMenuSelection / visible) * visible;
+  for (size_t i = first; i < first + visible && i <= readingSettingsRow(); ++i) {
     const int16_t y = 108 + (i - first) * 64;
-    if (i == noteSelection) focusRow(target, y, 56);
+    if (i == readingMenuSelection) focusRow(target, y, 56);
     char marker[64];
-    if (i < reader.noteCount()) reader.noteLabel(i, marker, sizeof(marker));
-    label(target, 48, y + 12, 420, i == reader.noteCount() ? uiText(strings::Text::Settings) : marker);
+    const char* title = uiText(strings::Text::Settings);
+    if (i < reader.noteCount()) {
+      reader.noteLabel(i, marker, sizeof(marker));
+      title = marker;
+    } else if (i < readingSettingsRow()) {
+      title = uiText(strings::Text::Contents);
+    }
+    label(target, 48, y + 12, 420, title);
   }
   if (missing) label(target, 48, 650, 420, uiText(strings::Text::NoteMissing));
-  drawChrome(Screen::Notes);
+  drawChrome(Screen::ReadingMenu);
   display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
 }
 
-void renderReadingPage() {
-  if (!reader.render(display)) showError(uiText(strings::Text::PageError), true, reader.path());
+void drawContents(bool missing = false) {
+  screen = Screen::Contents;
+  display.clearScreen();
+  auto target = canvas();
+  screenTitle(target, uiText(strings::Text::Contents));
+  constexpr size_t visible = 8;
+  const size_t first = (contentsSelection / visible) * visible;
+  for (size_t i = first; i < first + visible && i < reader.contentsCount(); ++i) {
+    const int16_t y = 108 + (i - first) * 64;
+    if (i == contentsSelection) focusRow(target, y, 56);
+    char title[128];
+    uint8_t depth = 0;
+    if (!reader.contentsEntry(i, title, sizeof(title), depth)) {
+      showError(uiText(strings::Text::PageError), true, reader.path());
+      return;
+    }
+    const int indent = (depth < 4 ? depth : 4) * 14;
+    label(target, 48 + indent, y + 12, 420 - indent, title);
+  }
+  if (missing) label(target, 48, 650, 420, uiText(strings::Text::SectionMissing));
+  drawChrome(Screen::Contents);
+  display.displayBuffer(freeink::FreeInkDisplay::FAST_REFRESH);
+}
+
+bool renderReadingPage() {
+  if (reader.render(display)) return true;
+  showError(uiText(strings::Text::PageError), true, reader.path());
+  return false;
 }
 
 void drawReadingSettings() {
@@ -628,9 +667,9 @@ void loop() {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       closeBook();
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
-      if (reader.noteCount()) {
-        noteSelection = 0;
-        drawNotes();
+      if (reader.noteCount() || reader.contentsCount()) {
+        readingMenuSelection = 0;
+        drawReadingMenu();
       } else {
         pendingTextSize = textSize;
         drawReadingSettings();
@@ -656,32 +695,57 @@ void loop() {
         saveState();
       }
     }
-  } else if (screen == Screen::Notes) {
+  } else if (screen == Screen::ReadingMenu) {
     if (input.wasReleased(InputManager::BTN_BACK)) {
       screen = Screen::Reading;
       renderReadingPage();
-    } else if (previousReleased() && noteSelection > 0) {
-      --noteSelection;
-      drawNotes();
-    } else if (nextReleased() && noteSelection < reader.noteCount()) {
-      ++noteSelection;
-      drawNotes();
+    } else if (previousReleased() && readingMenuSelection > 0) {
+      --readingMenuSelection;
+      drawReadingMenu();
+    } else if (nextReleased() && readingMenuSelection < readingSettingsRow()) {
+      ++readingMenuSelection;
+      drawReadingMenu();
     } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
-      if (noteSelection == reader.noteCount()) {
+      if (readingMenuSelection == readingSettingsRow()) {
         pendingTextSize = textSize;
         drawReadingSettings();
+      } else if (readingMenuSelection == reader.noteCount()) {
+        contentsSelection = 0;
+        drawContents();
       } else {
         saveState(true);
-        const auto result = reader.openNote(display, noteSelection);
-        if (result == TextReader::NoteResult::Opened) {
+        const auto result = reader.openNote(display, readingMenuSelection);
+        if (result == TextReader::JumpResult::Opened) {
           screen = Screen::Note;
           renderReadingPage();
-        } else if (result == TextReader::NoteResult::Missing) {
-          if (noteSelection >= reader.noteCount()) noteSelection = 0;
-          drawNotes(true);
+        } else if (result == TextReader::JumpResult::Missing) {
+          if (readingMenuSelection >= reader.noteCount()) readingMenuSelection = 0;
+          drawReadingMenu(true);
         } else {
           showError(uiText(strings::Text::PageError), true, reader.path());
         }
+      }
+    }
+  } else if (screen == Screen::Contents) {
+    if (input.wasReleased(InputManager::BTN_BACK)) {
+      screen = Screen::Reading;
+      renderReadingPage();
+    } else if (previousReleased() && contentsSelection > 0) {
+      --contentsSelection;
+      drawContents();
+    } else if (nextReleased() && contentsSelection + 1 < reader.contentsCount()) {
+      ++contentsSelection;
+      drawContents();
+    } else if (input.wasReleased(InputManager::BTN_CONFIRM)) {
+      saveState(true);
+      const auto result = reader.jumpToContents(display, contentsSelection);
+      if (result == TextReader::JumpResult::Opened) {
+        screen = Screen::Reading;
+        if (renderReadingPage()) saveState(true);
+      } else if (result == TextReader::JumpResult::Missing) {
+        drawContents(true);
+      } else {
+        showError(uiText(strings::Text::PageError), true, reader.path());
       }
     }
   } else if (screen == Screen::Note) {

@@ -41,10 +41,10 @@ def test_footnotes(binary):
             key("ok")
             source = key("ok")
             assert source["screen"] == "reading"
-            assert key("ok")["screen"] == "notes"
-            assert key("down")["screen"] == "notes"
+            assert key("ok")["screen"] == "reading-menu"
+            assert key("down")["screen"] == "reading-menu"
             key("down")
-            assert key("ok")["screen"] == "notes"  # missing anchor in another document
+            assert key("ok")["screen"] == "reading-menu"  # missing anchor in another document
             key("up")
             remote = key("ok")
             assert remote["screen"] == "note" and remote["pages"] > 1
@@ -66,6 +66,61 @@ def test_footnotes(binary):
             for _ in range(3):
                 key("down")
             assert key("ok")["screen"] == "settings"
+        finally:
+            backend.close()
+
+
+def test_contents(binary):
+    with tempfile.TemporaryDirectory(prefix="pagepet-contents-") as folder:
+        card = Path(folder)
+        with ZipFile(card / "contents.epub", "w", compression=ZIP_DEFLATED) as archive:
+            archive.writestr("mimetype", "application/epub+zip", compress_type=ZIP_STORED)
+            archive.writestr("META-INF/container.xml",
+                             '<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>')
+            archive.writestr("OPS/book.opf", '<package version="3.0"><metadata/><manifest>'
+                             '<item id="main" href="main.xhtml" media-type="application/xhtml+xml"/>'
+                             '<item id="next" href="next.xhtml" media-type="application/xhtml+xml"/>'
+                             '<item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>'
+                             '</manifest><spine><itemref idref="main"/><itemref idref="next"/></spine></package>')
+            archive.writestr("OPS/nav.xhtml",
+                             '<html xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>'
+                             '<li><a href="main.xhtml">Start</a><ol>'
+                             + ''.join(f'<li><a href="main.xhtml#s{i}">Section {i}</a></li>' for i in range(7))
+                             + '</ol></li><li><a href="next.xhtml#missing">Missing</a></li>'
+                             '<li><a href="next.xhtml#target">Target</a></li></ol></nav></body></html>')
+            archive.writestr("OPS/main.xhtml", '<html><body>'
+                             + ''.join(f'<p id="s{i}">Section {i}.</p>' for i in range(7)) + '</body></html>')
+            archive.writestr("OPS/next.xhtml", '<html><body>' + '<p>Before the target section.</p>' * 90
+                             + '<p id="target">Target section.</p></body></html>')
+
+        backend = Backend(binary, card)
+        try:
+            backend.ready()
+
+            def key(command):
+                backend.send(command)
+                return backend.ready()[0]
+
+            key("ok")
+            source = key("ok")
+            assert key("ok")["screen"] == "reading-menu"
+            assert key("ok")["screen"] == "contents"
+            for _ in range(8):
+                assert key("down")["screen"] == "contents"
+            missing = key("ok")
+            assert missing["screen"] == "contents" and missing["chapter"] == source["chapter"]
+            assert key("back")["character"] == source["character"]
+            key("ok")
+            key("ok")
+            for _ in range(9):
+                key("down")
+            target = key("ok")
+            assert target["screen"] == "reading" and target["chapter"] == 1 and target["page"] > 0, target
+            assert target["petPages"] == source["petPages"]
+            key("restart")
+            resumed = key("back")
+            assert resumed["screen"] == "reading"
+            assert (resumed["chapter"], resumed["character"]) == (target["chapter"], target["character"])
         finally:
             backend.close()
 
@@ -206,7 +261,8 @@ def main():
         finally:
             backend.close()
     test_footnotes(binary)
-    print("Simulator application checks passed: EPUB footnotes, front/side buttons, battery/charging/failures, EPUB/TXT, settings, resume, sleep, SD retry and PagePet.")
+    test_contents(binary)
+    print("Simulator application checks passed: EPUB contents and footnotes, front/side buttons, battery/charging/failures, EPUB/TXT, settings, resume, sleep, SD retry and PagePet.")
 
 
 if __name__ == "__main__":

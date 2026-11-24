@@ -326,8 +326,8 @@ void TextReader::noteLabel(size_t index, char* label, size_t capacity) const {
   label[length] = '\0';
 }
 
-TextReader::NoteResult TextReader::openNote(freeink::FreeInkDisplay& display, size_t index) {
-  if (inNote_ || index >= noteCount_) return NoteResult::Missing;
+TextReader::JumpResult TextReader::openNote(freeink::FreeInkDisplay& display, size_t index) {
+  if (inNote_ || index >= noteCount_) return JumpResult::Missing;
   const auto& link = *notes_[index].link;
   const uint32_t anchor = ZipCatalog::hashPath(link.fragment);
   int chapter = link.target[0] ? catalog_.spineIndexForHref(link.target) : static_cast<int>(spine_);
@@ -336,15 +336,15 @@ TextReader::NoteResult TextReader::openNote(freeink::FreeInkDisplay& display, si
     // The SDK can store a fragment-only link as the source directory.
     char sourceHref[512], directory[512];
     status_ = catalog_.spineHref(spine_, sourceHref, sizeof(sourceHref));
-    if (status_ != BookStatus::Ok) return NoteResult::Error;
+    if (status_ != BookStatus::Ok) return JumpResult::Error;
     if (!dirName(sourceHref, directory, sizeof(directory)) || strcmp(link.target, directory) != 0) {
-      return NoteResult::Missing;
+      return JumpResult::Missing;
     }
     chapter = static_cast<int>(spine_);
   }
   if (chapter < 0 &&
       snprintf(href, sizeof(href), "%s", link.target) >= static_cast<int>(sizeof(href))) {
-    return NoteResult::Missing;
+    return JumpResult::Missing;
   }
   returnSpine_ = spine_;
   returnCharacter_ = character_;
@@ -352,35 +352,67 @@ TextReader::NoteResult TextReader::openNote(freeink::FreeInkDisplay& display, si
   const bool changeChapter = chapter != static_cast<int>(spine_);
   if (changeChapter &&
       !openChapter(display, chapter < 0 ? spine_ : static_cast<uint32_t>(chapter), 0,
-                   chapter < 0 ? href : nullptr)) return NoteResult::Error;
+                   chapter < 0 ? href : nullptr)) return JumpResult::Error;
   uint32_t offset = 0;
   if (!cacheReader_.pageCount() || !cacheReader_.charForAnchor(anchor, &offset)) {
     if (changeChapter) {
       Page source{};
-      if (!restoreNoteSource(display) || !readPage(source)) return NoteResult::Error;
+      if (!restorePage(display, returnSpine_, returnPage_, returnCharacter_) || !readPage(source)) return JumpResult::Error;
       collectNotes(source);
     }
-    return NoteResult::Missing;
+    return JumpResult::Missing;
   }
   page_ = cacheReader_.pageForChar(offset);
   character_ = cacheReader_.charStart(page_);
   noteFirstPage_ = page_;
   inNote_ = true;
-  return NoteResult::Opened;
+  return JumpResult::Opened;
 }
 
 bool TextReader::returnFromNote(freeink::FreeInkDisplay& display) {
   if (!inNote_) return false;
   inNote_ = false;
-  return restoreNoteSource(display);
+  return restorePage(display, returnSpine_, returnPage_, returnCharacter_);
 }
 
-bool TextReader::restoreNoteSource(freeink::FreeInkDisplay& display) {
-  if (!openChapter(display, returnSpine_, returnCharacter_)) return false;
-  if (returnPage_ < pageCount() && cacheReader_.charStart(returnPage_) == returnCharacter_) {
-    page_ = returnPage_;
-  }
+bool TextReader::restorePage(freeink::FreeInkDisplay& display, uint32_t spine, uint32_t page,
+                             uint32_t character) {
+  if (!openChapter(display, spine, character)) return false;
+  if (page < pageCount() && cacheReader_.charStart(page) == character) page_ = page;
   return true;
+}
+
+bool TextReader::contentsEntry(size_t index, char* title, size_t capacity, uint8_t& depth) const {
+  BookCatalog::TocItem item{};
+  char fragment[2];
+  if (catalog_.tocItem(index, &item, title, capacity, fragment, sizeof(fragment)) != BookStatus::Ok) {
+    return false;
+  }
+  depth = item.depth;
+  return true;
+}
+
+TextReader::JumpResult TextReader::jumpToContents(freeink::FreeInkDisplay& display, size_t index) {
+  BookCatalog::TocItem item{};
+  char title[2], fragment[512];
+  status_ = catalog_.tocItem(index, &item, title, sizeof(title), fragment, sizeof(fragment));
+  if (status_ != BookStatus::Ok) return JumpResult::Error;
+  if (item.spineIndex < 0) return JumpResult::Missing;
+
+  const uint32_t sourceSpine = spine_, sourcePage = page_, sourceCharacter = character_;
+  const auto targetSpine = static_cast<uint32_t>(item.spineIndex);
+  const bool changeChapter = targetSpine != sourceSpine;
+  if (changeChapter && !openChapter(display, targetSpine, 0)) return JumpResult::Error;
+  uint32_t offset = 0;
+  if (!pageCount() || (item.hasFragment && !cacheReader_.charForAnchor(ZipCatalog::hashPath(fragment), &offset))) {
+    if (changeChapter && !restorePage(display, sourceSpine, sourcePage, sourceCharacter)) {
+      return JumpResult::Error;
+    }
+    return JumpResult::Missing;
+  }
+  page_ = item.hasFragment ? cacheReader_.pageForChar(offset) : 0;
+  character_ = cacheReader_.charStart(page_);
+  return JumpResult::Opened;
 }
 
 bool TextReader::readPage(Page& page) {

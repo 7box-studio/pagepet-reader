@@ -17,11 +17,14 @@ class TextReader {
  public:
   enum class TextSize : uint8_t { Small = 0, Standard = 1 };
   enum class Move : uint8_t { Moved, End, Error };
-  enum class NoteResult : uint8_t { Opened, Missing, Error };
+  enum class JumpResult : uint8_t { Opened, Missing, Error };
   size_t noteCount() const { return noteCount_; }
   void noteLabel(size_t index, char* label, size_t capacity) const;
-  NoteResult openNote(freeink::FreeInkDisplay& display, size_t index);
+  JumpResult openNote(freeink::FreeInkDisplay& display, size_t index);
   bool returnFromNote(freeink::FreeInkDisplay& display);
+  size_t contentsCount() const { return epub_ ? catalog_.tocCount() : 0; }
+  bool contentsEntry(size_t index, char* title, size_t capacity, uint8_t& depth) const;
+  JumpResult jumpToContents(freeink::FreeInkDisplay& display, size_t index);
   void setBuildCallback(void (*callback)()) { buildCallback_ = callback; }
   void setRenderCallback(void (*callback)()) { renderCallback_ = callback; }
 
@@ -54,7 +57,8 @@ class TextReader {
   bool prepareCache(freeink::FreeInkDisplay& display, uint32_t chapter, const char* noteHref);
   bool openChapter(freeink::FreeInkDisplay& display, uint32_t spine, uint32_t character,
                    const char* noteHref = nullptr);
-  bool restoreNoteSource(freeink::FreeInkDisplay& display);
+  bool restorePage(freeink::FreeInkDisplay& display, uint32_t spine, uint32_t page,
+                   uint32_t character);
   bool readPage(freeink::book::Page& page);
   void collectNotes(const freeink::book::Page& page);
   Move moveChapter(freeink::FreeInkDisplay& display, bool forward);

@@ -31,7 +31,7 @@ For every fixture and controller, record:
 | Cold open | Time from Confirm on a selected book in Library (or Continue reading on Home) to the first rendered page, free heap, largest free block, and cache bytes written. |
 | Warm reopen | Time from opening an indexed book to the first rendered page, free heap, and largest free block. |
 | Page turns | Time and free heap for 10 ordinary forward turns, 10 backward turns, and a chapter or page-boundary turn. |
-| Near-end jump | Time to reach a page near the end and whether the page remains responsive. |
+| Near-end jump | Select a late section in Contents. Time from confirming the section to seeing its page. Measure both an uncached and a cached jump. Restart and verify the new position. |
 | Recovery | Card removal during cache creation, interrupted power, retry result, and saved position after restart. |
 
 The firmware logs page timing in this form at 115200 baud:
@@ -44,9 +44,11 @@ Copy the largest observed `render`, the lowest `free`, and the lowest `largest` 
 
 ## Button path to verify
 
-Home → Library → Up/Down → Confirm enters folders or opens a book. Back from reading returns to its folder with the book selected; Back from a folder selects that folder in its parent, and Back from the root returns Home. Continue reading on Home (or Back as a shortcut) resumes the saved full path. In Reading, Confirm opens text settings; Up/Down changes the pending size; Confirm rebuilds pages; Back returns to the book. Error screen: Confirm retries, Back returns Home. Power enters sleep; releasing the power button after wake must not trigger a second sleep.
+Home → Library → Up/Down → Confirm enters folders or opens a book. Back from reading returns to its folder with the book selected; Back from a folder selects that folder in its parent, and Back from the root returns Home. Continue reading on Home (or Back as a shortcut) resumes the saved full path. In Reading, Confirm opens the reading menu on pages with footnotes or in books with contents. Select Reading settings there to test both sizes. On books without these menu items, Confirm opens text settings directly. Up/Down previews a size and Confirm applies it. Error screen: Confirm retries, Back returns Home. Power enters sleep; releasing the power button after wake must not trigger a second sleep.
 
 Also test more than eight entries and more than fourteen books in one folder, nested Russian names, empty folders, a removed/renamed folder, card removal while crossing a list-page boundary, and resume after sleep from a nested EPUB. Check that a cold boot does not scan the entire folder tree and that repeatedly opening/closing folders does not grow heap use.
+
+Check contents with more than eight entries, nested sections, a missing target, and Back without selecting a section. From a long footnote, test page turns, Back to the source page, and sleep/wake while the note is open. Check that opening either a section or a footnote does not award PagePet progress.
 
 Test every path on both controller variants. Record any difference before changing the UI or refresh mode.
 

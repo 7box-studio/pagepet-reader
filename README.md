@@ -48,8 +48,9 @@ Screenshots show the actual 528×792 framebuffer from the desktop simulator with
 | --- | --- |
 | Home | Continue reading, Library, PagePet, and language. Confirm activates the selected row; Back resumes the saved book directly. |
 | Library | Up/Down or Left/Right selects a folder/book; Confirm opens it. Back goes to the parent folder, or Home from the card root. |
-| Reading | Side buttons or front Left/Right: previous/next page. Confirm: footnotes on pages with superscript note links, otherwise reading settings. Back: return to the book's folder with that book selected. The bottom boxes name each front button's action. |
-| Footnotes | Up/Down selects a note or reading settings. Confirm opens the selection. In a note, page buttons turn pages and Back returns to the source page. |
+| Reading | Side buttons or front Left/Right: previous/next page. Confirm opens the reading menu when the book has contents or the page has footnotes. Otherwise it opens text settings. Back: return to the book's folder with that book selected. The bottom boxes name each front button's action. |
+| Reading menu | Up/Down selects a footnote, Contents, or text settings. Confirm opens the selection. In a footnote, the page buttons turn pages and Back returns to the source page. |
+| Contents | Up/Down selects a chapter or section. Confirm jumps to it and saves the new position. Back returns to the book at the current position. |
 | PagePet | Back: return Home. |
 | Error | Confirm: retry the failed book or page. Back: return Home. |
 | Any screen | Power button: sleep. |
@@ -62,7 +63,7 @@ EPUB uses the existing FreeInkBook streaming engine. First open creates a contai
 
 Reading positions store the chapter and character offset and survive text-size changes. Existing TXT saves are migrated automatically. Replacing an EPUB at the same path invalidates pages using its ZIP directory, including entry CRCs.
 
-The small-memory profile uses a 112 KiB temporary build buffer, a catalog capped at 64 KiB, and 32 + 20 KiB for the current chapter index and page. Builds also borrow the existing framebuffer; build and reading buffers do not coexist. PNG/JPEG images use a separate temporary 96 KiB budget only on illustrated pages; images exceeding available memory or using unsupported formats may be omitted. XML/image library allocations and system memory are additional to these arena budgets. Oversized catalogs or chapters fail through the retry/Home screen. DRM, embedded fonts, full browser CSS, fixed-layout fidelity, and a TOC screen are not supported yet. Superscript links can open notes in the same or a separate XHTML file. Sleep and restart resume the source page, and viewing notes does not advance PagePet.
+The small-memory profile uses a 112 KiB temporary build buffer, a catalog capped at 64 KiB, and 32 + 20 KiB for the current chapter index and page. Builds also borrow the existing framebuffer; build and reading buffers do not coexist. PNG/JPEG images use a separate temporary 96 KiB budget only on illustrated pages; images exceeding available memory or using unsupported formats may be omitted. XML/image library allocations and system memory are additional to these arena budgets. Oversized catalogs or chapters fail through the retry/Home screen. DRM, embedded fonts, full browser CSS, and fixed-layout fidelity are not supported yet. The contents list uses the EPUB navigation document or NCX and reads up to eight rows at a time from the SD catalog. Superscript links can open notes in the same or a separate XHTML file. Sleep and restart resume the source page, and viewing notes does not advance PagePet.
 
 ## Build
 

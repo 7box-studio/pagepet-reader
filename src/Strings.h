@@ -55,6 +55,10 @@ enum class Text : uint8_t {
   CardRetry,
   Notes,
   NoteMissing,
+  ReadingMenu,
+  Contents,
+  SectionMissing,
+  HintMenu,
   Count,
 };
 
@@ -75,6 +79,7 @@ inline const char* tr(Text key, Language language) {
       "There was time for one more page.",
       "Your reading position will be kept.", "Add TXT or EPUB files here.",
       "Then press Retry.", "Footnotes", "Footnote unavailable",
+      "Reading menu", "Contents", "Section unavailable", "Menu",
   };
   static constexpr const char* RU[] = {
       "PagePet Reader", "Книги", "Вставьте карту microSD", "Добавьте .txt или .epub на карту",
@@ -92,6 +97,7 @@ inline const char* tr(Text key, Language language) {
       "Можно было прочитать ещё одну страницу.",
       "Место в книге сохранится.", "Добавьте сюда файлы TXT или EPUB.",
       "Затем нажмите «Повтор».", "Сноски", "Сноска недоступна",
+      "Меню чтения", "Оглавление", "Раздел недоступен", "Меню",
   };
   static_assert(sizeof(EN) / sizeof(EN[0]) == static_cast<unsigned>(Text::Count));
   static_assert(sizeof(RU) / sizeof(RU[0]) == static_cast<unsigned>(Text::Count));
